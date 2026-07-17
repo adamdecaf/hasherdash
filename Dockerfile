@@ -21,7 +21,8 @@ RUN cargo build --release \
 # -----------------------------------------------------------------------------
 # Stage 2: build minerdash (Go + cgo)
 # -----------------------------------------------------------------------------
-FROM golang:1.23-bookworm AS build
+# Keep in sync with go.mod toolchain (GOTOOLCHAIN=auto can download newer).
+FROM golang:1.24-bookworm AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -32,15 +33,16 @@ COPY --from=ffi /out/lib/ /src/asic-rs-go/asicrs/lib/
 COPY --from=ffi /out/include/ /src/asic-rs-go/asicrs/include/
 
 WORKDIR /src/minerdash
-COPY go.mod ./
+COPY go.mod go.sum ./
 # Local replace so Docker does not need the module on the public proxy.
 RUN printf '\nreplace github.com/adamdecaf/asic-rs-go => /src/asic-rs-go\n' >> go.mod
 COPY . .
 
 ENV CGO_ENABLED=1
+ENV GOTOOLCHAIN=auto
 ENV CGO_CFLAGS="-I/src/asic-rs-go/asicrs/include"
 ENV CGO_LDFLAGS="-L/src/asic-rs-go/asicrs/lib -lasic_rs_ffi -lm -ldl -lpthread -Wl,-rpath,/usr/local/lib"
-RUN go mod tidy \
+RUN go mod download \
  && go build -trimpath -ldflags="-s -w" -o /out/minerdash ./cmd/minerdash
 
 # -----------------------------------------------------------------------------

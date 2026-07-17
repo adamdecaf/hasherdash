@@ -19,8 +19,10 @@ Built for **20+ miners on a wall monitor**: compact sortable table, rich filters
 
 ## CI
 
-GitHub Actions builds the [asic-rs-go](https://github.com/adamdecaf/asic-rs-go) FFI,
-runs unit tests, and compiles `minerdash` with cgo on every push/PR.
+GitHub Actions on every push/PR:
+
+1. Builds the [asic-rs-go](https://github.com/adamdecaf/asic-rs-go) FFI, runs unit tests, and compiles `minerdash` with cgo
+2. Builds the multi-stage Docker image (`Dockerfile` + `asicrsgo` build context) and smoke-tests the binary inside the image
 
 ## Quick start (real miners)
 

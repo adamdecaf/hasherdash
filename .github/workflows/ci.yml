@@ -87,3 +87,50 @@ jobs:
           else
             echo "no shared asic_rs_ffi in ldd (likely static .a) — ok if binary built"
           fi
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout minerdash
+        uses: actions/checkout@v4
+        with:
+          path: minerdash
+
+      - name: Checkout asic-rs-go
+        uses: actions/checkout@v4
+        with:
+          repository: adamdecaf/asic-rs-go
+          path: asic-rs-go
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: minerdash
+          file: minerdash/Dockerfile
+          # Sibling asic-rs-go for Dockerfile: COPY --from=asicrsgo
+          build-contexts: |
+            asicrsgo=asic-rs-go
+          push: false
+          load: true
+          tags: minerdash:ci
+          cache-from: type=gha,scope=minerdash-docker
+          cache-to: type=gha,mode=max,scope=minerdash-docker
+
+      - name: Smoke-test image
+        run: |
+          # Binary is present and linked; no miner targets required for this check.
+          docker run --rm --entrypoint /usr/local/bin/minerdash minerdash:ci -h 2>&1 | head -20 || true
+          # Confirm the entrypoint binary exists and the shared FFI is on the image.
+          docker run --rm --entrypoint /bin/sh minerdash:ci -c '
+            set -e
+            test -x /usr/local/bin/minerdash
+            test -f /usr/local/lib/libasic_rs_ffi.so
+            ldd /usr/local/bin/minerdash | grep -q asic_rs_ffi
+            echo "docker image ok"
+          '
