@@ -1,139 +1,99 @@
 # minerdash
 
-Read-only fleet dashboard for ASIC miners. Go backend + [oat.ink](https://oat.ink/) frontend, powered by [asic-rs-go](https://github.com/adamdecaf/asic-rs-go).
+Read-only fleet dashboard for ASIC miners. Go + [oat.ink](https://oat.ink/) UI, powered by [asic-rs-go](https://github.com/adamdecaf/asic-rs-go).
 
-Built for **20+ miners on a wall monitor**: compact sortable table, rich filters, selected-miner detail, and a live multi-series chart (hashrate / temp / power / …) that refreshes on a configurable interval (default 30s).
+Compact table, filters, miner detail, and live charts for a wall monitor (20+ miners).
 
 ![minerdash dashboard](docs/images/minerdash.png)
 
-## Layout
+## Quick start (Docker)
 
-```
-┌──────────────────┬────────────────────────────────────────────┐
-│ Filters          │ Metrics chart (all / filtered / selected)  │
-│ brand, TH/s, °C, ├────────────────────────────────────────────┤
-│ chips, FW, …     │ Compact fleet table (sort any column)      │
-├──────────────────┤                                            │
-│ Miner detail     │                                            │
-│ (selection)      │                                            │
-└──────────────────┴────────────────────────────────────────────┘
-```
+The image builds `asic-rs-go` from the public Go module proxy — no separate checkout.
 
-## CI
-
-GitHub Actions on every push/PR:
-
-1. Builds the [asic-rs-go](https://github.com/adamdecaf/asic-rs-go) FFI, runs unit tests, and compiles `minerdash` with cgo
-2. Builds the multi-stage Docker image (`Dockerfile` + `asicrsgo` build context) and smoke-tests the binary inside the image
-
-## Quick start (real miners)
-
-1. Build the FFI in a checkout of `asic-rs-go`:
-
-   ```bash
-   make ffi
-   # or: make -C ../asic-rs-go ffi
-   ```
-
-2. Point this module at it (already the default via `replace` for local dev):
-
-   ```bash
-   go mod edit -replace=github.com/adamdecaf/asic-rs-go=../asic-rs-go
-   go mod tidy
-   ```
-
-3. Create a config file:
-
-   ```bash
-   cp minerdash.example.yaml minerdash.yaml
-   # edit subnets / ips
-   make run
-   # or: ./bin/minerdash -config /path/to/minerdash.yaml
-   ```
-
-   ```yaml
-   # minerdash.yaml
-   poll_interval: 30s
-   subnets:
-     - 192.168.1.0/24
-   ```
-
-   Environment variables still work and **override** the file when set:
-
-   ```bash
-   export MINER_SUBNET=192.168.1.0/24   # one or comma-separated CIDRs
-   export POLL_INTERVAL=30s
-   make run
-   ```
-
-Full multi-stage image (builds Rust FFI + Go binary):
+**Option A — env var (fastest):**
 
 ```bash
-# Docker BuildKit required (build-context for sibling asic-rs-go)
-make docker && \
+make docker
+
+docker run --rm -p 8080:8080 --network host \
+  -e MINER_SUBNET=192.168.1.0/24 \
+  minerdash:latest
+```
+
+Open http://localhost:8080
+
+**Option B — config file:**
+
+```bash
+cp minerdash.example.yaml minerdash.yaml
+# set your CIDR under subnets:
+#   subnets:
+#     - 192.168.1.0/24
+
+make docker
+
 docker run --rm -p 8080:8080 --network host \
   -v "$PWD/minerdash.yaml:/app/minerdash.yaml:ro" \
   -e CONFIG_FILE=/app/minerdash.yaml \
   minerdash:latest
 ```
 
+`--network host` lets the container scan your LAN.
+
+Subnets are scanned **once** at startup; discovered miners are re-polled every `poll_interval` (default 30s).
+
+## Local run (no Docker)
+
+Needs a built [asic-rs-go](https://github.com/adamdecaf/asic-rs-go) FFI (sibling checkout is simplest):
+
+```bash
+# optional: clone next to this repo if you don't already have it
+# git clone https://github.com/adamdecaf/asic-rs-go ../asic-rs-go
+
+make ffi   # builds FFI in ../asic-rs-go (override with ASIC_RS_GO=…)
+
+export MINER_SUBNET=192.168.1.0/24
+# or: cp minerdash.example.yaml minerdash.yaml  # edit subnets
+
+make run
+```
+
 ## Configuration
 
-### Config file (YAML or JSON)
+**Precedence:** defaults → config file → environment (env wins).
 
-Looked up automatically (cwd): `minerdash.yaml`, `minerdash.yml`, `config.yaml`,
-`config.yml`, `minerdash.json`, `config.json`.
+### Config file
 
-Or set explicitly:
+Auto-loaded from cwd: `minerdash.yaml`, `minerdash.yml`, `config.yaml`, `config.yml`, `minerdash.json`, `config.json`.
 
-- CLI: `-config /path/to/minerdash.yaml`
-- Env: `CONFIG_FILE=/path/to/minerdash.yaml`
-
-Example:
+Or set: `-config /path` / `CONFIG_FILE=/path`.
 
 ```yaml
 http_addr: ":8080"
 poll_interval: 30s
-history_points: 240
-scan_timeout_sec: 8
-scan_concurrent: 200
-
-# Scan these CIDR blocks once, then poll discovered miners
 subnets:
   - 192.168.1.0/24
-  - 10.0.0.0/24
-
-# Optional asic-rs range strings
-# ranges:
-#   - 192.168.1.1-50
-
-# Optional always-on IPs
 # ips:
 #   - 192.168.1.10
 ```
 
-See `minerdash.example.yaml` for a full template.
+Full template: `minerdash.example.yaml`.
 
-**Precedence:** defaults → config file → environment (env wins when set).
-
-Subnets/ranges are scanned **once** at startup (or first poll); discovered IPs
-are cached and re-polled every `poll_interval` without re-scanning the whole LAN.
-
-### Environment variables
+### Environment
 
 | Env | Default | Description |
 |-----|---------|-------------|
+| `MINER_SUBNET` / `MINER_SUBNETS` | — | CIDR(s), comma-separated; scanned once |
+| `MINER_IPS` | — | Comma-separated IPs to poll |
+| `MINER_RANGES` | — | asic-rs range strings (e.g. `192.168.1.1-50`) |
 | `CONFIG_FILE` | auto | Path to YAML/JSON config |
 | `HTTP_ADDR` | `:8080` | Listen address |
-| `POLL_INTERVAL` | `30s` | Backend poll interval (`30`, `30s`, `1m`) |
-| `HISTORY_POINTS` | `240` | Ring buffer length per metric (~2h @ 30s) |
-| `MINER_IPS` | — | Comma-separated IPs to poll |
-| `MINER_SUBNET` / `MINER_SUBNETS` | — | CIDR(s), comma-separated; scanned once |
-| `MINER_RANGES` | — | asic-rs range strings, comma-separated |
-| `SCAN_TIMEOUT_SEC` | `8` | Per-miner identification timeout |
+| `POLL_INTERVAL` | `30s` | Backend poll interval |
+| `HISTORY_POINTS` | `240` | History ring length per metric |
+| `SCAN_TIMEOUT_SEC` | `8` | Per-miner identify timeout |
 | `SCAN_CONCURRENT` | `200` | Discovery concurrency |
 
-The UI refresh interval is independent (top-right control, stored in `localStorage`).
+UI refresh interval is separate (top-right control, `localStorage`).
 
 ## API
 
@@ -150,20 +110,15 @@ Metrics: `hashrate`, `temp`, `asic_temp`, `vr_temp`, `wattage`, `efficiency`, `c
 ## Project layout
 
 ```
-cmd/minerdash/          entrypoint
-internal/
-  api/                  HTTP handlers
-  config/               file + env config
-  models/               JSON DTOs
-  poller/               asic-rs discovery + poll
-  store/                in-memory cache + history rings
-web/static/             oat.ink UI (HTML/CSS/JS)
-Dockerfile              multi-stage image (Rust FFI + cgo)
+cmd/minerdash/     entrypoint
+internal/          api, config, poller, store
+web/static/        oat.ink UI
+Dockerfile         multi-stage (module proxy + Rust FFI + cgo)
 ```
 
 ## Notes
 
-- **Read-only** for now — no restart / pool / power control in the UI.
-- Chart is canvas-based (no Chart.js) to stay vanilla.
-- Styling via [oat](https://github.com/knadh/oat) CDN (`@knadh/oat`).
-- Requires cgo and a built `asic-rs-go` FFI library for real miner access.
+- **Read-only** — no restart / pool / power control in the UI.
+- Canvas charts (no Chart.js); styling via [oat](https://github.com/knadh/oat).
+- Docker builds pull `github.com/adamdecaf/asic-rs-go` and compile the FFI inside the image.
+- CI builds the binary and Docker image on every push/PR.

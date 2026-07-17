@@ -19,15 +19,6 @@ jobs:
     steps:
       - name: Checkout minerdash
         uses: actions/checkout@v4
-        with:
-          path: minerdash
-
-      # Local replace points at ../asic-rs-go; checkout sibling so go build works.
-      - name: Checkout asic-rs-go
-        uses: actions/checkout@v4
-        with:
-          repository: adamdecaf/asic-rs-go
-          path: asic-rs-go
 
       - name: Install system dependencies
         run: |
@@ -40,48 +31,50 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: asic-rs-go/asic-rs-ffi -> target
-
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          # go.mod may pin a very new toolchain; fall back to stable if needed.
-          go-version-file: minerdash/go.mod
+          go-version-file: go.mod
           check-latest: true
-          cache-dependency-path: minerdash/go.sum
+          cache-dependency-path: go.sum
+
+      - name: Download asic-rs-go module
+        run: |
+          go mod download github.com/adamdecaf/asic-rs-go
+          MODDIR="$(go list -m -f '{{.Dir}}' github.com/adamdecaf/asic-rs-go)"
+          # Module cache is read-only; build from a writable copy.
+          cp -a "$MODDIR" /tmp/asic-rs-go
+          echo "ASIC_RS_GO=/tmp/asic-rs-go" >> "$GITHUB_ENV"
+          echo "CGO_CFLAGS=-I/tmp/asic-rs-go/asicrs/include" >> "$GITHUB_ENV"
+          echo "CGO_LDFLAGS=-L/tmp/asic-rs-go/asicrs/lib -lasic_rs_ffi -lm -ldl -lpthread" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=/tmp/asic-rs-go/asicrs/lib" >> "$GITHUB_ENV"
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: /tmp/asic-rs-go/asic-rs-ffi -> target
 
       - name: Build asic-rs-go FFI
-        working-directory: asic-rs-go
-        run: make ffi
+        run: make -C /tmp/asic-rs-go ffi
 
       - name: Unit tests (no cgo)
-        working-directory: minerdash
         env:
           CGO_ENABLED: "0"
         run: go test ./internal/config ./internal/store ./internal/axetemp -count=1
 
       - name: Build minerdash
-        working-directory: minerdash
         env:
           CGO_ENABLED: "1"
-          # Link against the FFI static/shared library from asicrs/lib.
-          CGO_CFLAGS: "-I${{ github.workspace }}/asic-rs-go/asicrs/include"
-          CGO_LDFLAGS: "-L${{ github.workspace }}/asic-rs-go/asicrs/lib -lasic_rs_ffi -lm -ldl -lpthread"
-          LD_LIBRARY_PATH: ${{ github.workspace }}/asic-rs-go/asicrs/lib
-        run: go build -trimpath -o bin/minerdash ./cmd/minerdash
+        run: |
+          # Use the tree with the built FFI (module cache has no .so/.a).
+          go mod edit -replace=github.com/adamdecaf/asic-rs-go=/tmp/asic-rs-go
+          go build -trimpath -o bin/minerdash ./cmd/minerdash
 
       - name: Verify binary links
-        working-directory: minerdash
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/asic-rs-go/asicrs/lib
         run: |
           test -x bin/minerdash
           file bin/minerdash
           ldd bin/minerdash | tee /tmp/ldd.txt
-          # Ensure the asic-rs FFI is resolved (static .a or shared .so).
           if grep -q asic_rs_ffi /tmp/ldd.txt; then
             echo "linked against libasic_rs_ffi (shared)"
           else
@@ -96,14 +89,6 @@ jobs:
     steps:
       - name: Checkout minerdash
         uses: actions/checkout@v4
-        with:
-          path: minerdash
-
-      - name: Checkout asic-rs-go
-        uses: actions/checkout@v4
-        with:
-          repository: adamdecaf/asic-rs-go
-          path: asic-rs-go
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -111,11 +96,8 @@ jobs:
       - name: Build image
         uses: docker/build-push-action@v6
         with:
-          context: minerdash
-          file: minerdash/Dockerfile
-          # Sibling asic-rs-go for Dockerfile: COPY --from=asicrsgo
-          build-contexts: |
-            asicrsgo=asic-rs-go
+          context: .
+          file: Dockerfile
           push: false
           load: true
           tags: minerdash:ci
@@ -124,9 +106,7 @@ jobs:
 
       - name: Smoke-test image
         run: |
-          # Binary is present and linked; no miner targets required for this check.
           docker run --rm --entrypoint /usr/local/bin/minerdash minerdash:ci -h 2>&1 | head -20 || true
-          # Confirm the entrypoint binary exists and the shared FFI is on the image.
           docker run --rm --entrypoint /bin/sh minerdash:ci -c '
             set -e
             test -x /usr/local/bin/minerdash

@@ -1,11 +1,13 @@
 .PHONY: run build test docker tidy ffi
 
-# Local path to asic-rs-go (override as needed)
+# Optional local path for asic-rs-go when developing against a sibling checkout.
+# Docker does not need this — it pulls github.com/adamdecaf/asic-rs-go via the module proxy.
 ASIC_RS_GO ?= ../asic-rs-go
 
 export CGO_ENABLED ?= 1
 
-# Build asic-rs FFI in the sibling checkout (required for local run/build).
+# Build asic-rs FFI for local run/build (sibling checkout; override with ASIC_RS_GO=).
+# Docker does not use this target — the image builds FFI from the module proxy.
 ffi:
 	$(MAKE) -C $(ASIC_RS_GO) ffi
 
@@ -21,8 +23,6 @@ test:
 tidy:
 	go mod tidy
 
+# Build image from this repo only (asic-rs-go comes from the public Go module proxy).
 docker:
-	docker build \
-		-f Dockerfile \
-		--build-context asicrsgo=$(ASIC_RS_GO) \
-		-t minerdash:latest .
+	docker build -f Dockerfile -t minerdash:latest .
