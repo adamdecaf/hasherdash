@@ -1,0 +1,12 @@
+.git
+.gitignore
+bin
+dist
+*.md
+.env
+.env.*
+**/.DS_Store
+**/__pycache__
+**/*.pyc
+.venv
+venv

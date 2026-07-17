@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>minerdash</title>
+  <meta name="color-scheme" content="light dark" />
+  <script>
+    (function () {
+      var t = localStorage.getItem('theme');
+      if (t) {
+        document.documentElement.style.colorScheme = t;
+        document.documentElement.setAttribute('data-theme', t);
+      }
+      // Restore filters column width early to avoid layout flash.
+      var w = parseInt(localStorage.getItem('filtersWidth'), 10);
+      if (w >= 180 && w <= 800) {
+        document.documentElement.style.setProperty('--filters-width', w + 'px');
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="https://unpkg.com/@knadh/oat/oat.min.css" />
+  <link rel="stylesheet" href="/app.css" />
+  <script src="https://unpkg.com/@knadh/oat/oat.min.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <nav data-topnav>
+    <div class="row">
+      <div class="col-6 branding hstack gap">
+        <strong class="logo-text">minerdash</strong>
+        <span id="status-pill" class="badge" title="Fleet status">—</span>
+        <small id="poll-meta" class="text-light"></small>
+      </div>
+      <div class="col-6 justify-end hstack gap">
+        <label class="inline-label">
+          Refresh
+          <select id="poll-interval" class="small" title="Client refresh interval">
+            <option value="5">5s</option>
+            <option value="10">10s</option>
+            <option value="15">15s</option>
+            <option value="30" selected>30s</option>
+            <option value="60">60s</option>
+            <option value="120">2m</option>
+          </select>
+        </label>
+        <button id="btn-refresh" class="small outline" type="button">Refresh now</button>
+        <button id="btn-theme" class="small outline" type="button" title="Toggle theme">Theme</button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="dash container-fluid">
+    <div class="dash-grid" id="dash-grid">
+      <!-- Column 1: filters + detail -->
+      <aside class="col-left" id="col-left">
+        <section class="card panel" id="filters-panel">
+          <header class="panel-head">
+            <button id="btn-toggle-filters" class="collapse-toggle" type="button" aria-expanded="true" aria-controls="filters-body" title="Collapse filters">
+              <span class="collapse-chevron" aria-hidden="true">▾</span>
+              <h3>Filters</h3>
+            </button>
+            <div class="hstack gap">
+              <span id="filter-active-badge" class="badge filter-active-badge" hidden>active</span>
+              <button id="btn-clear-filters" class="small outline" type="button">Clear</button>
+            </div>
+          </header>
+
+          <div id="filters-body" class="collapse-body">
+            <div class="field">
+              <label for="f-search">Search</label>
+              <input id="f-search" type="search" placeholder="IP, hostname, model, serial…" autocomplete="off" />
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <label for="f-make">Brand / make</label>
+                <select id="f-make" multiple size="4"></select>
+              </div>
+              <div class="field">
+                <label for="f-model">Model</label>
+                <select id="f-model" multiple size="4"></select>
+              </div>
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <label for="f-firmware">Firmware</label>
+                <select id="f-firmware" multiple size="3"></select>
+              </div>
+              <div class="field">
+                <label for="f-algo">Algo</label>
+                <select id="f-algo" multiple size="3"></select>
+              </div>
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <label for="f-mining">Mining</label>
+                <select id="f-mining">
+                  <option value="">Any</option>
+                  <option value="1">Mining</option>
+                  <option value="0">Not mining</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="f-errors">Status</label>
+                <select id="f-errors">
+                  <option value="">Any</option>
+                  <option value="ok">OK only</option>
+                  <option value="err">Errors only</option>
+                  <option value="msg">Has messages</option>
+                </select>
+              </div>
+            </div>
+
+            <fieldset class="range-set">
+              <legend>Hashrate (TH/s)</legend>
+              <div class="field-row">
+                <input id="f-hr-min" type="number" step="any" placeholder="min" />
+                <input id="f-hr-max" type="number" step="any" placeholder="max" />
+              </div>
+            </fieldset>
+
+            <fieldset class="range-set">
+              <legend>ASIC temp max (°C)</legend>
+              <div class="field-row">
+                <input id="f-temp-min" type="number" step="any" placeholder="min" />
+                <input id="f-temp-max" type="number" step="any" placeholder="max" />
+              </div>
+            </fieldset>
+
+            <fieldset class="range-set">
+              <legend>VR temp max (°C)</legend>
+              <div class="field-row">
+                <input id="f-vr-min" type="number" step="any" placeholder="min" />
+                <input id="f-vr-max" type="number" step="any" placeholder="max" />
+              </div>
+            </fieldset>
+
+            <fieldset class="range-set">
+              <legend>Power (W)</legend>
+              <div class="field-row">
+                <input id="f-w-min" type="number" step="any" placeholder="min" />
+                <input id="f-w-max" type="number" step="any" placeholder="max" />
+              </div>
+            </fieldset>
+
+            <fieldset class="range-set">
+              <legend>Chips</legend>
+              <div class="field-row">
+                <input id="f-chips-min" type="number" step="1" placeholder="min" />
+                <input id="f-chips-max" type="number" step="1" placeholder="max" />
+              </div>
+            </fieldset>
+
+            <fieldset class="range-set">
+              <legend>Efficiency (J/TH)</legend>
+              <div class="field-row">
+                <input id="f-eff-min" type="number" step="any" placeholder="min" />
+                <input id="f-eff-max" type="number" step="any" placeholder="max" />
+              </div>
+            </fieldset>
+
+            <p class="text-light filter-count"><span id="filter-count">0</span> shown</p>
+          </div>
+
+          <p id="filters-collapsed-summary" class="text-light filters-collapsed-summary" hidden>
+            <span id="filter-count-collapsed">0</span> shown
+            <span id="filter-summary-bits"></span>
+          </p>
+        </section>
+
+        <section class="card panel" id="detail-panel">
+          <header class="panel-head">
+            <h3>Miner detail</h3>
+          </header>
+          <div id="detail-body" class="detail-body">
+            <p class="text-light">Select a miner from the list.</p>
+          </div>
+        </section>
+      </aside>
+
+      <div
+        id="filters-resizer"
+        class="filters-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize filters panel"
+        aria-valuemin="180"
+        aria-valuemax="640"
+        aria-valuenow="280"
+        title="Drag to resize filters"
+        tabindex="0"
+      ></div>
+
+      <!-- Column 2: chart + compact table -->
+      <section class="col-right">
+        <section class="card panel chart-panel">
+          <header class="panel-head">
+            <h3>Metrics</h3>
+            <div class="hstack gap">
+              <label class="inline-label">
+                Metric
+                <select id="chart-metric" class="small">
+                  <option value="hashrate">Hashrate (TH/s)</option>
+                  <option value="asic_temp">ASIC temp max (°C)</option>
+                  <option value="asic_temp_min">ASIC temp min (°C)</option>
+                  <option value="vr_temp">VR temp max (°C)</option>
+                  <option value="vr_temp_min">VR temp min (°C)</option>
+                  <option value="temp">Temp (legacy avg/max)</option>
+                  <option value="wattage">Power (W)</option>
+                  <option value="efficiency">Efficiency (J/TH)</option>
+                  <option value="chips">Chips</option>
+                </select>
+              </label>
+              <label class="inline-label">
+                Series
+                <select id="chart-scope" class="small">
+                  <option value="filtered">Filtered</option>
+                  <option value="selected">Selected only</option>
+                  <option value="all">All miners</option>
+                </select>
+              </label>
+            </div>
+          </header>
+          <div class="chart-wrap">
+            <canvas id="chart" aria-label="Metrics chart"></canvas>
+            <div id="chart-legend" class="chart-legend"></div>
+          </div>
+        </section>
+
+        <section class="card panel table-panel">
+          <header class="panel-head">
+            <h3>Fleet <small id="table-count" class="text-light"></small></h3>
+            <div class="hstack gap">
+              <div class="hstack gap totals" id="fleet-totals"></div>
+              <div class="columns-menu">
+                <button id="btn-columns" class="small outline" type="button" aria-expanded="false" aria-controls="columns-panel" title="Choose columns">
+                  Columns
+                </button>
+                <div id="columns-panel" class="columns-panel" hidden>
+                  <header class="columns-panel-head">
+                    <strong>List columns</strong>
+                    <div class="hstack gap">
+                      <button id="btn-columns-all" class="small outline" type="button">All</button>
+                      <button id="btn-columns-default" class="small outline" type="button">Default</button>
+                    </div>
+                  </header>
+                  <p class="text-light columns-hint">Shown fields are saved in this browser.</p>
+                  <div id="columns-list" class="columns-list"></div>
+                </div>
+              </div>
+            </div>
+          </header>
+          <div class="table-scroll">
+            <table id="miners-table" class="compact">
+              <thead>
+                <tr id="miners-thead-row"></tr>
+              </thead>
+              <tbody id="miners-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

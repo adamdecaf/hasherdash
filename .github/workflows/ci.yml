@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout minerdash
+        uses: actions/checkout@v4
+        with:
+          path: minerdash
+
+      # Local replace points at ../asic-rs-go; checkout sibling so go build works.
+      - name: Checkout asic-rs-go
+        uses: actions/checkout@v4
+        with:
+          repository: adamdecaf/asic-rs-go
+          path: asic-rs-go
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            pkg-config
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: asic-rs-go/asic-rs-ffi -> target
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          # go.mod may pin a very new toolchain; fall back to stable if needed.
+          go-version-file: minerdash/go.mod
+          check-latest: true
+          cache-dependency-path: minerdash/go.sum
+
+      - name: Build asic-rs-go FFI
+        working-directory: asic-rs-go
+        run: make ffi
+
+      - name: Unit tests (no cgo)
+        working-directory: minerdash
+        env:
+          CGO_ENABLED: "0"
+        run: go test ./internal/config ./internal/store ./internal/axetemp -count=1
+
+      - name: Build minerdash
+        working-directory: minerdash
+        env:
+          CGO_ENABLED: "1"
+          # Link against the FFI static/shared library from asicrs/lib.
+          CGO_CFLAGS: "-I${{ github.workspace }}/asic-rs-go/asicrs/include"
+          CGO_LDFLAGS: "-L${{ github.workspace }}/asic-rs-go/asicrs/lib -lasic_rs_ffi -lm -ldl -lpthread"
+          LD_LIBRARY_PATH: ${{ github.workspace }}/asic-rs-go/asicrs/lib
+        run: go build -trimpath -o bin/minerdash ./cmd/minerdash
+
+      - name: Verify binary links
+        working-directory: minerdash
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/asic-rs-go/asicrs/lib
+        run: |
+          test -x bin/minerdash
+          file bin/minerdash
+          ldd bin/minerdash | tee /tmp/ldd.txt
+          # Ensure the asic-rs FFI is resolved (static .a or shared .so).
+          if grep -q asic_rs_ffi /tmp/ldd.txt; then
+            echo "linked against libasic_rs_ffi (shared)"
+          else
+            echo "no shared asic_rs_ffi in ldd (likely static .a) — ok if binary built"
+          fi

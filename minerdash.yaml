@@ -1,0 +1,24 @@
+# minerdash configuration
+# Copy to minerdash.yaml (or set CONFIG_FILE / -config) and edit.
+#
+# Discovery: use any combination of subnets (CIDR), ranges, and static IPs.
+# Subnets/ranges are scanned once; discovered miners are then polled each interval.
+
+http_addr: ":8080"
+poll_interval: 30s
+history_points: 240
+scan_timeout_sec: 8
+scan_concurrent: 200
+
+# CIDR blocks to scan (local LAN examples)
+subnets:
+  - 192.168.68.0/24
+
+# Optional asic-rs compact ranges
+# ranges:
+#   - 192.168.1.1-50
+
+# Optional fixed IPs (always polled, even if not found in a subnet scan)
+# ips:
+#   - 192.168.1.10
+#   - 192.168.1.11
