@@ -4,6 +4,8 @@ Read-only fleet dashboard for ASIC miners. Go backend + [oat.ink](https://oat.in
 
 Built for **20+ miners on a wall monitor**: compact sortable table, rich filters, selected-miner detail, and a live multi-series chart (hashrate / temp / power / …) that refreshes on a configurable interval (default 30s).
 
+![minerdash dashboard](docs/images/minerdash.png)
+
 ## Layout
 
 ```
