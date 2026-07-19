@@ -110,6 +110,7 @@ UI refresh interval is separate (top-right control, `localStorage`). Chart range
 | GET | `/api/miners` | Compact snapshots |
 | GET | `/api/miners/{ip}` | Detail (boards, fans, pools) |
 | GET | `/api/history?metric=hashrate&ids=a,b&window=1d` | Time series (`window`, or `since`/`until` RFC3339) |
+| POST | `/api/rescan` | Kick a full subnet/range discovery + poll now |
 
 Metrics: `hashrate`, `temp`, `asic_temp`, `vr_temp`, `wattage`, `efficiency`, `chips`.
 

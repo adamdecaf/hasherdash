@@ -16,13 +16,14 @@ import (
 
 // AsicSource discovers and polls real miners via asic-rs-go.
 type AsicSource struct {
-	cfg        config.Config
-	staticIPs  []string          // configured fixed IPs (always polled)
-	discovered map[string]struct{} // IPs found via subnet/range scan
-	subnets    []string          // CIDRs to re-scan periodically
-	ranges     []string          // range strings to re-scan periodically
-	lastScan   time.Time         // zero forces a scan on the first collect
-	mu         sync.Mutex
+	cfg         config.Config
+	staticIPs   []string            // configured fixed IPs (always polled)
+	discovered  map[string]struct{} // IPs found via subnet/range scan
+	subnets     []string            // CIDRs to re-scan periodically
+	ranges      []string            // range strings to re-scan periodically
+	lastScan    time.Time           // zero forces a scan on the first collect
+	forceRescan bool                // next collect runs a full subnet/range scan
+	mu          sync.Mutex
 }
 
 // NewAsicSource builds a source from configured IPs / subnets / ranges.
@@ -108,6 +109,13 @@ func (a *AsicSource) Collect(ctx context.Context) ([]models.Detail, error) {
 	return out, nil
 }
 
+// RequestRescan forces a full subnet/range discovery on the next Collect.
+func (a *AsicSource) RequestRescan() {
+	a.mu.Lock()
+	a.forceRescan = true
+	a.mu.Unlock()
+}
+
 // Forget drops discovered IPs (not static config) so pruned miners stop being polled
 // until a future full scan finds them again.
 func (a *AsicSource) Forget(ids []string) {
@@ -171,6 +179,10 @@ func (a *AsicSource) resolveIPs() ([]string, error) {
 func (a *AsicSource) shouldScanLocked() bool {
 	if len(a.subnets) == 0 && len(a.ranges) == 0 {
 		return false
+	}
+	if a.forceRescan {
+		a.forceRescan = false
+		return true
 	}
 	// Always scan on the first collect.
 	if a.lastScan.IsZero() {

@@ -3,6 +3,7 @@ package poller
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/adamdecaf/hasherdash/internal/models"
@@ -22,6 +23,11 @@ type Forgetter interface {
 	Forget(ids []string)
 }
 
+// Rescanner can force a full discovery scan on the next collect.
+type Rescanner interface {
+	RequestRescan()
+}
+
 // Runner periodically polls a Source into a Store.
 type Runner struct {
 	src      Source
@@ -29,6 +35,9 @@ type Runner struct {
 	every    time.Duration
 	minerTTL time.Duration
 	logger   *log.Logger
+
+	kick   chan struct{} // buffered; triggers an out-of-band tick
+	pollMu sync.Mutex    // serializes ticks (manual rescan vs ticker)
 }
 
 // NewRunner creates a poll loop.
@@ -36,7 +45,27 @@ func NewRunner(src Source, st *store.Store, every, minerTTL time.Duration, logge
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &Runner{src: src, store: st, every: every, minerTTL: minerTTL, logger: logger}
+	return &Runner{
+		src:      src,
+		store:    st,
+		every:    every,
+		minerTTL: minerTTL,
+		logger:   logger,
+		kick:     make(chan struct{}, 1),
+	}
+}
+
+// RequestRescan asks the source for a full discovery scan and kicks an immediate poll.
+// Safe to call from HTTP handlers.
+func (r *Runner) RequestRescan() {
+	if rs, ok := r.src.(Rescanner); ok {
+		rs.RequestRescan()
+	}
+	select {
+	case r.kick <- struct{}{}:
+	default:
+		// A kick is already pending.
+	}
 }
 
 // Run blocks until ctx is cancelled.
@@ -52,11 +81,24 @@ func (r *Runner) Run(ctx context.Context) {
 			return
 		case <-t.C:
 			r.tick(ctx)
+		case <-r.kick:
+			r.logger.Printf("poller: manual rescan requested")
+			r.tick(ctx)
 		}
 	}
 }
 
 func (r *Runner) tick(ctx context.Context) {
+	if !r.pollMu.TryLock() {
+		r.logger.Printf("poller: skip tick — already running")
+		return
+	}
+	defer r.pollMu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return
+	}
+
 	r.store.SetPolling(true)
 	start := time.Now()
 	details, err := r.src.Collect(ctx)

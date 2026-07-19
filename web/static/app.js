@@ -337,6 +337,7 @@
     pollMeta: $("poll-meta"),
     pollInterval: $("poll-interval"),
     btnRefresh: $("btn-refresh"),
+    btnRescan: $("btn-rescan"),
     btnTheme: $("btn-theme"),
     btnClear: $("btn-clear-filters"),
     btnToggleFilters: $("btn-toggle-filters"),
@@ -396,10 +397,44 @@
     "#6366f1", "#eab308", "#0ea5e9", "#d946ef", "#65a30d",
   ];
 
-  async function api(path) {
-    const r = await fetch(path, { headers: { Accept: "application/json" } });
-    if (!r.ok) throw new Error(`${path}: ${r.status}`);
-    return r.json();
+  async function api(path, opts = {}) {
+    const r = await fetch(path, {
+      headers: { Accept: "application/json", ...(opts.headers || {}) },
+      ...opts,
+    });
+    if (!r.ok) {
+      let msg = `${path}: ${r.status}`;
+      try {
+        const t = await r.text();
+        if (t) msg += ` ${t.trim()}`;
+      } catch { /* ignore */ }
+      throw new Error(msg);
+    }
+    if (r.status === 204) return null;
+    const ct = r.headers.get("content-type") || "";
+    if (ct.includes("application/json")) return r.json();
+    return null;
+  }
+
+  async function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /** Wait until the backend poll cycle finishes (or timeout). */
+  async function waitUntilIdle(timeoutMs = 120000) {
+    const start = Date.now();
+    // Give the server a moment to flip polling=true.
+    await sleep(300);
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const meta = await api("/api/meta");
+        if (meta && !meta.polling) return meta;
+      } catch {
+        /* keep waiting */
+      }
+      await sleep(1000);
+    }
+    return null;
   }
 
   function multiValues(sel) {
@@ -1227,6 +1262,28 @@
       schedule();
     });
     els.btnRefresh.addEventListener("click", () => refresh());
+    if (els.btnRescan) {
+      els.btnRescan.addEventListener("click", async () => {
+        if (els.btnRescan.disabled) return;
+        els.btnRescan.disabled = true;
+        const prevLabel = els.btnRescan.textContent;
+        els.btnRescan.textContent = "Scanning…";
+        els.status.textContent = "rescanning…";
+        els.status.className = "badge";
+        try {
+          await api("/api/rescan", { method: "POST" });
+          await waitUntilIdle();
+          await refresh();
+        } catch (e) {
+          els.status.textContent = "error";
+          els.status.className = "badge err";
+          els.pollMeta.textContent = String(e.message || e);
+        } finally {
+          els.btnRescan.disabled = false;
+          els.btnRescan.textContent = prevLabel;
+        }
+      });
+    }
     els.btnTheme.addEventListener("click", () => {
       const cur = document.documentElement.getAttribute("data-theme") ||
         (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");

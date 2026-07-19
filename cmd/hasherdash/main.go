@@ -40,7 +40,7 @@ func main() {
 
 	go runner.Run(ctx)
 
-	srv := api.New(st)
+	srv := api.New(st, runner)
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           srv.Handler(),

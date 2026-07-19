@@ -11,15 +11,21 @@ import (
 	"github.com/adamdecaf/hasherdash/web"
 )
 
-// Server is the HTTP API + static UI.
-type Server struct {
-	store *store.Store
-	mux   *http.ServeMux
+// RescanRequester kicks a full discovery scan + poll cycle.
+type RescanRequester interface {
+	RequestRescan()
 }
 
-// New creates an HTTP handler.
-func New(st *store.Store) *Server {
-	s := &Server{store: st, mux: http.NewServeMux()}
+// Server is the HTTP API + static UI.
+type Server struct {
+	store  *store.Store
+	rescan RescanRequester
+	mux    *http.ServeMux
+}
+
+// New creates an HTTP handler. rescan may be nil (POST /api/rescan returns 503).
+func New(st *store.Store, rescan RescanRequester) *Server {
+	s := &Server{store: st, rescan: rescan, mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
@@ -30,6 +36,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/miners", s.handleMiners)
 	s.mux.HandleFunc("GET /api/miners/{id}", s.handleMiner)
 	s.mux.HandleFunc("GET /api/history", s.handleHistory)
+	s.mux.HandleFunc("POST /api/rescan", s.handleRescan)
 	s.mux.Handle("GET /", web.Handler())
 }
 
@@ -61,6 +68,18 @@ func (s *Server) handleMiner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, d)
+}
+
+func (s *Server) handleRescan(w http.ResponseWriter, r *http.Request) {
+	if s.rescan == nil {
+		http.Error(w, "rescan not available", http.StatusServiceUnavailable)
+		return
+	}
+	s.rescan.RequestRescan()
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"ok":      true,
+		"message": "rescan started",
+	})
 }
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +162,7 @@ func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 			w.WriteHeader(http.StatusNoContent)
 			return

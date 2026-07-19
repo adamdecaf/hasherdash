@@ -45,6 +45,10 @@ func TestUpsertErrorPreservesSnapshot(t *testing.T) {
 		ID: "10.0.0.2", IP: "10.0.0.2", Make: "Bitaxe", Model: "Ultra",
 		HashrateTH: 1.5, UpdatedAt: now, LastSeen: now,
 	}})
+	before, ok := st.Get("10.0.0.2")
+	if !ok {
+		t.Fatal("missing after success")
+	}
 	st.Upsert(models.Detail{Snapshot: models.Snapshot{
 		ID: "10.0.0.2", IP: "10.0.0.2", Error: "timeout", UpdatedAt: now.Add(time.Minute),
 	}})
@@ -59,8 +63,8 @@ func TestUpsertErrorPreservesSnapshot(t *testing.T) {
 	if d.Error != "timeout" {
 		t.Fatalf("error %q", d.Error)
 	}
-	if !d.LastSeen.Equal(now) {
-		t.Fatalf("LastSeen advanced on error: %v", d.LastSeen)
+	if !d.LastSeen.Equal(before.LastSeen) {
+		t.Fatalf("LastSeen advanced on error: before=%v after=%v", before.LastSeen, d.LastSeen)
 	}
 	hist := st.History("hashrate", nil, HistoryOptions{})
 	if len(hist) != 1 || len(hist[0].Points) != 1 {
