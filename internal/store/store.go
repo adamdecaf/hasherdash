@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -8,12 +10,33 @@ import (
 	"github.com/adamdecaf/hasherdash/internal/models"
 )
 
-// Store is an in-memory fleet cache with per-miner metric history.
+// Options configures a Store.
+type Options struct {
+	// HistoryPoints is the in-memory ring size when SQLite is off.
+	// With SQLite, samples are retained by Retention instead.
+	HistoryPoints int
+	// PollSec is exposed in Meta for the UI.
+	PollSec int
+	// SQLitePath is the metrics DB path. Empty or "off" keeps history in memory only.
+	// Use ":memory:" for an ephemeral SQLite DB (tests).
+	SQLitePath string
+	// Retention is how long SQLite metric samples are kept. Non-positive disables time prune.
+	Retention time.Duration
+	// Logger receives non-fatal SQLite errors (optional).
+	Logger *log.Logger
+}
+
+// Store is an in-memory fleet cache with per-miner metric history
+// (SQLite-backed when configured, otherwise ring buffers).
 type Store struct {
 	mu      sync.RWMutex
 	miners  map[string]models.Detail
-	history map[string]map[string]*ring // id -> metric -> ring
+	history map[string]map[string]*ring // id -> metric -> ring (memory mode)
 	points  int
+
+	db        *sql.DB
+	retention time.Duration
+	logger    *log.Logger
 
 	lastPollAt  time.Time
 	lastPollErr string
@@ -51,17 +74,52 @@ func (r *ring) slice() []models.HistoryPoint {
 	return out
 }
 
-// New creates a store that keeps historyPoints samples per metric per miner.
+// New creates a memory-only store (no SQLite). Prefer Open for production.
 func New(historyPoints int, pollSec int) *Store {
-	if historyPoints < 10 {
-		historyPoints = 10
+	st, err := Open(Options{HistoryPoints: historyPoints, PollSec: pollSec})
+	if err != nil {
+		// Memory-only Open cannot fail.
+		panic(err)
 	}
-	return &Store{
-		miners:  make(map[string]models.Detail),
-		history: make(map[string]map[string]*ring),
-		points:  historyPoints,
-		pollSec: pollSec,
+	return st
+}
+
+// Open creates a store, optionally with SQLite-backed metric history.
+func Open(opts Options) (*Store, error) {
+	if opts.HistoryPoints < 10 {
+		opts.HistoryPoints = 10
 	}
+	s := &Store{
+		miners:    make(map[string]models.Detail),
+		history:   make(map[string]map[string]*ring),
+		points:    opts.HistoryPoints,
+		pollSec:   opts.PollSec,
+		retention: opts.Retention,
+		logger:    opts.Logger,
+	}
+	db, err := openMetricsDB(opts.SQLitePath)
+	if err != nil {
+		return nil, err
+	}
+	s.db = db
+	return s, nil
+}
+
+// UsingSQLite reports whether metric history is persisted to SQLite.
+func (s *Store) UsingSQLite() bool {
+	return s.db != nil
+}
+
+// Close releases the SQLite handle (if any). Safe to call multiple times.
+func (s *Store) Close() error {
+	s.mu.Lock()
+	db := s.db
+	s.db = nil
+	s.mu.Unlock()
+	if db == nil {
+		return nil
+	}
+	return db.Close()
 }
 
 // SetPolling marks whether a poll cycle is in progress.
@@ -75,9 +133,9 @@ func (s *Store) SetPolling(v bool) {
 // Failed polls merge an error onto any existing snapshot without wiping
 // identity / last-good telemetry, and do not advance LastSeen.
 func (s *Store) Upsert(d models.Detail) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	var samples []metricSample
 
+	s.mu.Lock()
 	now := time.Now().UTC()
 	if d.UpdatedAt.IsZero() {
 		d.UpdatedAt = now
@@ -101,6 +159,7 @@ func (s *Store) Upsert(d models.Detail) {
 			}
 			s.miners[d.ID] = d
 		}
+		s.mu.Unlock()
 		return
 	}
 
@@ -111,24 +170,53 @@ func (s *Store) Upsert(d models.Detail) {
 	}
 	s.miners[d.ID] = d
 
-	s.pushLocked(d.ID, "hashrate", d.HashrateTH, d.UpdatedAt)
+	samples = collectSamples(d)
+	if s.db == nil {
+		for _, sm := range samples {
+			s.pushLocked(sm.minerID, sm.metric, sm.value, sm.ts)
+		}
+	}
+	s.mu.Unlock()
+
+	if s.db != nil && len(samples) > 0 {
+		if err := s.insertSamples(samples); err != nil {
+			s.logf("store: insert metrics for %s: %v", d.ID, err)
+		}
+	}
+}
+
+func collectSamples(d models.Detail) []metricSample {
+	t := d.UpdatedAt
+	if t.IsZero() {
+		t = time.Now().UTC()
+	}
+	out := []metricSample{
+		{d.ID, "hashrate", t, d.HashrateTH},
+	}
 	// "temp" charts the hottest ASIC reading when available, else average.
 	temp := d.AvgTempC
 	if d.HasASICTemp {
 		temp = d.ASICTempMax
 	}
-	s.pushLocked(d.ID, "temp", temp, d.UpdatedAt)
+	out = append(out, metricSample{d.ID, "temp", t, temp})
 	if d.HasASICTemp {
-		s.pushLocked(d.ID, "asic_temp", d.ASICTempMax, d.UpdatedAt)
-		s.pushLocked(d.ID, "asic_temp_min", d.ASICTempMin, d.UpdatedAt)
+		out = append(out,
+			metricSample{d.ID, "asic_temp", t, d.ASICTempMax},
+			metricSample{d.ID, "asic_temp_min", t, d.ASICTempMin},
+		)
 	}
 	if d.HasVRTemp {
-		s.pushLocked(d.ID, "vr_temp", d.VRTempMax, d.UpdatedAt)
-		s.pushLocked(d.ID, "vr_temp_min", d.VRTempMin, d.UpdatedAt)
+		out = append(out,
+			metricSample{d.ID, "vr_temp", t, d.VRTempMax},
+			metricSample{d.ID, "vr_temp_min", t, d.VRTempMin},
+		)
 	}
-	s.pushLocked(d.ID, "wattage", d.Wattage, d.UpdatedAt)
-	s.pushLocked(d.ID, "efficiency", d.Efficiency, d.UpdatedAt)
-	s.pushLocked(d.ID, "chips", float64(d.TotalChips), d.UpdatedAt)
+	out = append(out,
+		metricSample{d.ID, "wattage", t, d.Wattage},
+		metricSample{d.ID, "efficiency", t, d.Efficiency},
+		metricSample{d.ID, "chips", t, float64(d.TotalChips)},
+	)
+	return out
 }
 
 func (s *Store) pushLocked(id, metric string, v float64, t time.Time) {
@@ -143,16 +231,24 @@ func (s *Store) pushLocked(id, metric string, v float64, t time.Time) {
 	r.push(models.HistoryPoint{T: t, V: v})
 }
 
-// MarkPoll records poll cycle completion.
+// MarkPoll records poll cycle completion and prunes expired metric samples.
 func (s *Store) MarkPoll(err error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.lastPollAt = time.Now().UTC()
 	s.polling = false
 	if err != nil {
 		s.lastPollErr = err.Error()
 	} else {
 		s.lastPollErr = ""
+	}
+	retention := s.retention
+	s.mu.Unlock()
+
+	if s.db != nil && retention > 0 {
+		cutoff := time.Now().UTC().Add(-retention)
+		if _, err := s.pruneMetricsBefore(cutoff); err != nil {
+			s.logf("store: prune metrics: %v", err)
+		}
 	}
 }
 
@@ -163,8 +259,6 @@ func (s *Store) Prune(ttl time.Duration) []string {
 		return nil
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	cutoff := time.Now().UTC().Add(-ttl)
 	var removed []string
 	for id, d := range s.miners {
@@ -180,6 +274,13 @@ func (s *Store) Prune(ttl time.Duration) []string {
 		removed = append(removed, id)
 	}
 	sort.Strings(removed)
+	s.mu.Unlock()
+
+	if len(removed) > 0 && s.db != nil {
+		if err := s.deleteMetricsForMiners(removed); err != nil {
+			s.logf("store: delete metrics for pruned miners: %v", err)
+		}
+	}
 	return removed
 }
 
@@ -211,6 +312,18 @@ type HistoryOptions struct {
 
 // History returns series for the given metric and miner IDs (empty IDs = all).
 func (s *Store) History(metric string, ids []string, opts HistoryOptions) []models.Series {
+	if s.db != nil {
+		out, err := s.historyFromDB(metric, ids, opts)
+		if err != nil {
+			s.logf("store: history query: %v", err)
+			return nil
+		}
+		return out
+	}
+	return s.historyFromMemory(metric, ids, opts)
+}
+
+func (s *Store) historyFromMemory(metric string, ids []string, opts HistoryOptions) []models.Series {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -308,6 +421,22 @@ func (s *Store) Meta() models.Meta {
 		Firmwares:       sortedKeys(firmwares),
 		Algos:           sortedKeys(algos),
 	}
+}
+
+func (s *Store) logf(format string, args ...any) {
+	if s.logger != nil {
+		s.logger.Printf(format, args...)
+		return
+	}
+	log.Printf(format, args...)
+}
+
+// SQLitePathLabel is a short description for logs.
+func SQLitePathLabel(path string) string {
+	if path == "" || path == SQLitePathOff {
+		return "off (memory)"
+	}
+	return path
 }
 
 func sortedKeys(m map[string]struct{}) []string {

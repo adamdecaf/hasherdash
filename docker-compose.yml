@@ -1,10 +1,19 @@
-version: '3.8'
+# Metric history is stored on the host at ./data/hasherdash.db
+# (bind-mounted to /app/data inside the container).
 
 services:
   hasherdash:
     image: hasherdash:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "8080:8080"
+    # Host networking so the container can scan the LAN.
+    network_mode: host
     environment:
-      - MINER_SUBNET=192.168.68.0/24
+      MINER_SUBNET: ${MINER_SUBNET:-192.168.68.0/24}
+      # Keep the DB under the bind-mounted data directory.
+      SQLITE_PATH: /app/data/hasherdash.db
+    volumes:
+      # Host path → container. SQLite file: ./data/hasherdash.db
+      - ./data:/app/data

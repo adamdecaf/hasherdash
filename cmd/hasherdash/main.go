@@ -31,7 +31,27 @@ func main() {
 		logger.Printf("warning: no ips/subnets/ranges configured — set them in hasherdash.yaml or MINER_SUBNET / MINER_IPS")
 	}
 
-	st := store.New(cfg.HistoryPoints, int(cfg.PollInterval.Seconds()))
+	st, err := store.Open(store.Options{
+		HistoryPoints: cfg.HistoryPoints,
+		PollSec:       int(cfg.PollInterval.Seconds()),
+		SQLitePath:    cfg.SQLitePath,
+		Retention:     cfg.HistoryRetention,
+		Logger:        logger,
+	})
+	if err != nil {
+		log.Fatalf("store: %v", err)
+	}
+	defer func() {
+		if err := st.Close(); err != nil {
+			logger.Printf("store close: %v", err)
+		}
+	}()
+	if st.UsingSQLite() {
+		logger.Printf("metrics: sqlite=%s retention=%s", store.SQLitePathLabel(cfg.SQLitePath), cfg.HistoryRetention)
+	} else {
+		logger.Printf("metrics: memory rings points=%d (sqlite off)", cfg.HistoryPoints)
+	}
+
 	src := poller.NewSource(cfg)
 	runner := poller.NewRunner(src, st, cfg.PollInterval, cfg.MinerTTL, logger)
 

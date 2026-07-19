@@ -13,7 +13,11 @@ rescan_interval: 30m
 miner_ttl: 168h
 # Keep metric samples for charting (UI default window is 24h; up to 7d selectable).
 history_retention: 168h
-# Optional hard cap on ring size; auto-sized from history_retention / poll_interval if omitted.
+# SQLite file for metric history (survives restarts). Use "off" for memory-only rings.
+# Docker: keep this under the bind-mounted data dir (default image uses /app/data/hasherdash.db).
+sqlite_path: hasherdash.db
+# Optional hard cap on in-memory ring size when sqlite_path is off;
+# auto-sized from history_retention / poll_interval if omitted.
 # history_points: 20162
 scan_timeout_sec: 8
 scan_concurrent: 200

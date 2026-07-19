@@ -2,7 +2,7 @@
 
 Read-only fleet dashboard for ASIC miners. Go + [oat.ink](https://oat.ink/) UI, powered by [asic-rs-go](https://github.com/adamdecaf/asic-rs-go).
 
-Compact table, filters, miner detail, and live charts for a wall monitor (20+ miners).
+Compact table, filters, miner detail, and live charts for a wall monitor (20+ miners). Metric history is stored in **SQLite** so charts survive restarts.
 
 ![hasherdash dashboard](docs/images/hasherdash.png)
 
@@ -10,35 +10,49 @@ Compact table, filters, miner detail, and live charts for a wall monitor (20+ mi
 
 The image builds `asic-rs-go` from the public Go module proxy — no separate checkout.
 
-**Option A — env var (fastest):**
+**Docker Compose (recommended):**
 
 ```bash
-make docker
+# optional: MINER_SUBNET=192.168.1.0/24 docker compose up -d --build
+docker compose up -d --build
+```
 
-docker run --rm -p 8080:8080 --network host \
-  -e MINER_SUBNET=192.168.1.0/24 \
-  hasherdash:latest
+SQLite is bind-mounted to the host at **`./data/hasherdash.db`** (`./data` → `/app/data` in the container). Create the directory first if needed:
+
+```bash
+mkdir -p data
 ```
 
 Open http://localhost:8080
 
-**Option B — config file:**
+**Plain `docker run`:**
 
 ```bash
-cp hasherdash.example.yaml hasherdash.yaml
-# set your CIDR under subnets:
-#   subnets:
-#     - 192.168.1.0/24
-
 make docker
+mkdir -p data
 
-docker run --rm -p 8080:8080 --network host \
-  -v "$PWD/hasherdash.yaml:/app/hasherdash.yaml:ro" \
-  -e CONFIG_FILE=/app/hasherdash.yaml \
+docker run --rm --network host \
+  -e MINER_SUBNET=192.168.1.0/24 \
+  -e SQLITE_PATH=/app/data/hasherdash.db \
+  -v "$PWD/data:/app/data" \
   hasherdash:latest
 ```
 
-`--network host` lets the container scan your LAN.
+**With a config file:**
+
+```bash
+cp hasherdash.example.yaml hasherdash.yaml
+# edit subnets, then:
+
+docker run --rm --network host \
+  -v "$PWD/hasherdash.yaml:/app/hasherdash.yaml:ro" \
+  -v "$PWD/data:/app/data" \
+  -e CONFIG_FILE=/app/hasherdash.yaml \
+  -e SQLITE_PATH=/app/data/hasherdash.db \
+  hasherdash:latest
+```
+
+`--network host` lets the container scan your LAN. Always mount a host directory on `/app/data` (and keep `SQLITE_PATH` under that path) so metric history survives restarts and is easy to back up.
 
 Subnets are re-scanned every `rescan_interval` (default 30m). Discovered miners stay in the fleet until `miner_ttl` (default 7d) after last successful poll, and are re-polled every `poll_interval` (default 30s).
 
@@ -58,6 +72,28 @@ export MINER_SUBNET=192.168.1.0/24
 make run
 ```
 
+By default metrics are written to `./hasherdash.db` in the working directory.
+
+## Metric storage (SQLite)
+
+Successful polls append samples (hashrate, temps, power, efficiency, chips, …) to a SQLite database. Charts and `/api/history` read from that DB.
+
+| Setting | Default | Notes |
+|---------|---------|--------|
+| `sqlite_path` / `SQLITE_PATH` | `hasherdash.db` (Docker: `/app/data/hasherdash.db`) | File path; parent dirs are created as needed |
+| `history_retention` / `HISTORY_RETENTION` | `168h` | Samples older than this are deleted after each poll |
+| `sqlite_path: off` / `SQLITE_PATH=off` | — | In-memory ring buffers only (lost on restart) |
+
+**Docker data mount:** bind a host directory to `/app/data` and leave `SQLITE_PATH=/app/data/hasherdash.db`. With Compose this is `./data` → host file `./data/hasherdash.db`.
+
+On Linux, the container runs as uid `10001`. If SQLite cannot create the DB, fix ownership once:
+
+```bash
+mkdir -p data && sudo chown -R 10001:10001 data
+```
+
+Fleet snapshots (live table/detail) stay in memory and are refreshed by the poller. Only **time series** are durable.
+
 ## Configuration
 
 **Precedence:** defaults → config file → environment (env wins).
@@ -74,6 +110,7 @@ poll_interval: 30s
 rescan_interval: 30m
 miner_ttl: 168h
 history_retention: 168h
+sqlite_path: hasherdash.db
 subnets:
   - 192.168.1.0/24
 # ips:
@@ -95,7 +132,8 @@ Full template: `hasherdash.example.yaml`.
 | `RESCAN_INTERVAL` | `30m` | Full subnet/range discovery cadence (`0` = startup only) |
 | `MINER_TTL` | `168h` | Keep offline miners this long after last success (`0` = forever) |
 | `HISTORY_RETENTION` | `168h` | How long metric samples are kept for charts |
-| `HISTORY_POINTS` | auto | Optional ring size override (auto from retention ÷ poll) |
+| `SQLITE_PATH` | `hasherdash.db` | SQLite file for metrics (`off` = memory only) |
+| `HISTORY_POINTS` | auto | Optional in-memory ring size when SQLite is off |
 | `SCAN_TIMEOUT_SEC` | `8` | Per-miner identify timeout |
 | `SCAN_CONCURRENT` | `200` | Discovery concurrency |
 
@@ -118,8 +156,9 @@ Metrics: `hashrate`, `temp`, `asic_temp`, `vr_temp`, `wattage`, `efficiency`, `c
 
 ```
 cmd/hasherdash/     entrypoint
-internal/          api, config, poller, store
+internal/          api, config, poller, store (SQLite metrics)
 web/static/        oat.ink UI
+docs/              GitHub Pages site
 Dockerfile         multi-stage (module proxy + Rust FFI + cgo)
 ```
 
@@ -127,5 +166,6 @@ Dockerfile         multi-stage (module proxy + Rust FFI + cgo)
 
 - **Read-only** — no restart / pool / power control in the UI.
 - Canvas charts (no Chart.js); styling via [oat](https://github.com/knadh/oat).
+- Metric history uses pure-Go SQLite ([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)); no extra system library.
 - Docker builds pull `github.com/adamdecaf/asic-rs-go` and compile the FFI inside the image.
 - CI builds the binary and Docker image on every push/PR.

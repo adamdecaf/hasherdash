@@ -66,7 +66,9 @@ FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --uid 10001 --home /app --shell /usr/sbin/nologin hasherdash
+    && useradd --system --uid 10001 --home /app --shell /usr/sbin/nologin hasherdash \
+    && mkdir -p /app/data \
+    && chown hasherdash:hasherdash /app/data
 
 COPY --from=ffi /out/lib/libasic_rs_ffi.so /usr/local/lib/
 RUN ldconfig
@@ -76,5 +78,7 @@ USER hasherdash
 WORKDIR /app
 ENV HTTP_ADDR=:8080
 ENV POLL_INTERVAL=30s
+ENV SQLITE_PATH=/app/data/hasherdash.db
 EXPOSE 8080
+VOLUME ["/app/data"]
 ENTRYPOINT ["/usr/local/bin/hasherdash"]

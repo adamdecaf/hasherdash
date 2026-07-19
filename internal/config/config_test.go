@@ -136,6 +136,7 @@ func TestDefaultsRescanAndRetention(t *testing.T) {
 	_ = os.Unsetenv("MINER_TTL")
 	_ = os.Unsetenv("HISTORY_RETENTION")
 	_ = os.Unsetenv("HISTORY_POINTS")
+	_ = os.Unsetenv("SQLITE_PATH")
 	_ = os.Unsetenv("MINER_SUBNET")
 	_ = os.Unsetenv("MINER_IPS")
 	_ = os.Unsetenv("MINER_SUBNETS")
@@ -155,6 +156,9 @@ func TestDefaultsRescanAndRetention(t *testing.T) {
 	}
 	if cfg.HistoryRetention != 7*24*time.Hour {
 		t.Fatalf("retention %v", cfg.HistoryRetention)
+	}
+	if cfg.SQLitePath != "hasherdash.db" {
+		t.Fatalf("sqlite_path %q", cfg.SQLitePath)
 	}
 	// history points sized for 7d @ 30s
 	wantPts := int((7*24*time.Hour)/cfg.PollInterval) + 2

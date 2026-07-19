@@ -44,6 +44,7 @@
         <ul class="hero-meta">
           <li>Subnet discovery</li>
           <li>Live metrics &amp; charts</li>
+          <li>SQLite history</li>
           <li>Docker one-liner</li>
           <li>No write controls</li>
         </ul>
@@ -94,6 +95,13 @@
             </p>
           </article>
           <article class="card">
+            <h3>SQLite history</h3>
+            <p>
+              Metric samples land in a local SQLite file so charts survive restarts.
+              Retention is configurable (default 7 days).
+            </p>
+          </article>
+          <article class="card">
             <h3>Miner detail</h3>
             <p>
               Select a row for boards, fans, and pools without leaving the dashboard.
@@ -109,6 +117,7 @@
             <h3>Simple deploy</h3>
             <p>
               Single Docker image with asic-rs FFI baked in, or run locally with a sibling FFI build.
+              Compose bind-mounts <code>./data</code> so the metrics DB is at <code>./data/hasherdash.db</code>.
             </p>
           </article>
         </div>
@@ -124,16 +133,20 @@
           <div class="step">
             <span class="step-num">1</span>
             <div>
-              <h3>Build the image</h3>
-              <pre><code>make docker</code></pre>
+              <h3>Start with Compose</h3>
+              <pre><code>mkdir -p data
+docker compose up -d --build</code></pre>
             </div>
           </div>
           <div class="step">
             <span class="step-num">2</span>
             <div>
-              <h3>Run with a subnet</h3>
-              <pre><code>docker run --rm -p 8080:8080 --network host \
+              <h3>Or plain Docker</h3>
+              <pre><code>make docker && mkdir -p data
+docker run --rm --network host \
   -e MINER_SUBNET=192.168.1.0/24 \
+  -e SQLITE_PATH=/app/data/hasherdash.db \
+  -v "$PWD/data:/app/data" \
   hasherdash:latest</code></pre>
             </div>
           </div>
@@ -153,16 +166,18 @@
 #   subnets:
 #     - 192.168.1.0/24
 
-make docker
-
-docker run --rm -p 8080:8080 --network host \
+mkdir -p data
+docker run --rm --network host \
   -v "$PWD/hasherdash.yaml:/app/hasherdash.yaml:ro" \
+  -v "$PWD/data:/app/data" \
   -e CONFIG_FILE=/app/hasherdash.yaml \
+  -e SQLITE_PATH=/app/data/hasherdash.db \
   hasherdash:latest</code></pre>
         </details>
 
         <p class="docs-link">
-          Full config, API, and local (non-Docker) setup are in the
+          SQLite is bind-mounted at <code>./data/hasherdash.db</code> on the host
+          (<code>/app/data/hasherdash.db</code> in the container). Full config, API, and local setup are in the
           <a href="https://github.com/adamdecaf/hasherdash#readme">README</a>.
         </p>
       </div>

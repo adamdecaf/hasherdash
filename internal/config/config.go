@@ -14,10 +14,13 @@ import (
 
 // Config holds runtime settings for hasherdash.
 type Config struct {
-	HTTPAddr       string
-	PollInterval   time.Duration
-	HistoryPoints  int
+	HTTPAddr         string
+	PollInterval     time.Duration
+	HistoryPoints    int
 	HistoryRetention time.Duration // how long metric samples are kept
+	// SQLitePath is where metric samples are persisted.
+	// Default "hasherdash.db". Set to "off" for in-memory rings only.
+	SQLitePath     string
 	MinerIPs       []string
 	MinerSubnets   []string // CIDR ranges, e.g. 192.168.1.0/24
 	MinerRanges    []string // asic-rs range strings, e.g. 192.168.1.1-50
@@ -35,14 +38,15 @@ type Config struct {
 
 // fileConfig is the on-disk representation (YAML or JSON).
 type fileConfig struct {
-	HTTPAddr           string `yaml:"http_addr" json:"http_addr"`
-	PollInterval       string `yaml:"poll_interval" json:"poll_interval"`
-	HistoryPoints      *int   `yaml:"history_points" json:"history_points"`
-	HistoryRetention   string `yaml:"history_retention" json:"history_retention"`
-	ScanTimeoutSec     *int   `yaml:"scan_timeout_sec" json:"scan_timeout_sec"`
-	Concurrent         *int   `yaml:"scan_concurrent" json:"scan_concurrent"`
-	RescanInterval     string `yaml:"rescan_interval" json:"rescan_interval"`
-	MinerTTL           string `yaml:"miner_ttl" json:"miner_ttl"`
+	HTTPAddr         string `yaml:"http_addr" json:"http_addr"`
+	PollInterval     string `yaml:"poll_interval" json:"poll_interval"`
+	HistoryPoints    *int   `yaml:"history_points" json:"history_points"`
+	HistoryRetention string `yaml:"history_retention" json:"history_retention"`
+	SQLitePath       string `yaml:"sqlite_path" json:"sqlite_path"`
+	ScanTimeoutSec   *int   `yaml:"scan_timeout_sec" json:"scan_timeout_sec"`
+	Concurrent       *int   `yaml:"scan_concurrent" json:"scan_concurrent"`
+	RescanInterval   string `yaml:"rescan_interval" json:"rescan_interval"`
+	MinerTTL          string `yaml:"miner_ttl" json:"miner_ttl"`
 
 	IPs     []string `yaml:"ips" json:"ips"`
 	Subnets []string `yaml:"subnets" json:"subnets"`
@@ -76,6 +80,7 @@ func Load(path string) (Config, error) {
 		PollInterval:     30 * time.Second,
 		HistoryPoints:    0, // sized from HistoryRetention in clamp
 		HistoryRetention: 7 * 24 * time.Hour,
+		SQLitePath:       "hasherdash.db",
 		ScanTimeoutSec:   8,
 		Concurrent:       200,
 		RescanInterval:   30 * time.Minute,
@@ -151,6 +156,9 @@ func applyFile(cfg *Config, fc fileConfig) {
 			cfg.HistoryRetention = d
 		}
 	}
+	if v := strings.TrimSpace(fc.SQLitePath); v != "" {
+		cfg.SQLitePath = v
+	}
 	if fc.ScanTimeoutSec != nil {
 		cfg.ScanTimeoutSec = *fc.ScanTimeoutSec
 	}
@@ -208,6 +216,9 @@ func applyEnv(cfg *Config) {
 		if d, err := parseDuration(v); err == nil {
 			cfg.HistoryRetention = d
 		}
+	}
+	if v, ok := os.LookupEnv("SQLITE_PATH"); ok {
+		cfg.SQLitePath = strings.TrimSpace(v)
 	}
 	if v := strings.TrimSpace(os.Getenv("SCAN_TIMEOUT_SEC")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -307,6 +318,12 @@ func (c Config) Summary() string {
 		parts = append(parts, "miner_ttl=forever")
 	}
 	parts = append(parts, "history="+c.HistoryRetention.String())
+	switch {
+	case c.SQLitePath == "" || strings.EqualFold(c.SQLitePath, "off"):
+		parts = append(parts, "sqlite=off")
+	default:
+		parts = append(parts, "sqlite="+c.SQLitePath)
+	}
 	return strings.Join(parts, " ")
 }
 
