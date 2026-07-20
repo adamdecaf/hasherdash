@@ -7,7 +7,6 @@
 services:
   hasherdash:
     image: adamdecaf/hasherdash:latest
-    pull_policy: always
     build:
       context: .
       dockerfile: Dockerfile
