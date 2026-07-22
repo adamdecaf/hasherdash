@@ -1000,11 +1000,27 @@
     return COLORS[i % COLORS.length];
   }
 
+  /** Color for a history series — type-agg shares one hue across avg/min/max. */
+  function colorForSeries(s, fallbackIdx) {
+    if (s && Number.isFinite(s.typeColor)) {
+      return COLORS[s.typeColor % COLORS.length];
+    }
+    if (s && s.id) {
+      const idx = state.history.findIndex((x) => x.id === s.id);
+      if (idx >= 0) return COLORS[idx % COLORS.length];
+    }
+    return COLORS[fallbackIdx % COLORS.length];
+  }
+
   /**
    * Max gap between samples before we treat the hole as missing data
    * (e.g. power outage). Derived from poll interval with jitter headroom.
+   * Type-aggregated series use coarser buckets, so scale the threshold up.
    */
   function chartGapThresholdMs() {
+    if (els.chartMetric && els.chartMetric.value === "hashrate_by_type") {
+      return typeAggBucketMs() * 2.5;
+    }
     const pollSec = (state.meta && state.meta.poll_interval_sec) || 30;
     return Math.max(pollSec * 2.5, 90) * 1000;
   }
@@ -1204,9 +1220,12 @@
     // lines — one path per contiguous segment (gaps are not bridged)
     prepared.forEach((prep, idx) => {
       const s = prep.series;
-      const color = seriesColor(state.history.indexOf(s) >= 0 ? state.history.findIndex((x) => x.id === s.id) : idx);
+      const color = colorForSeries(s, idx);
       ctx.strokeStyle = color;
-      ctx.lineWidth = 1.6;
+      const band = s.stat === "min" || s.stat === "max";
+      ctx.lineWidth = band ? 1.25 : 1.8;
+      ctx.globalAlpha = band ? 0.55 : 1;
+      ctx.setLineDash(band ? [5, 4] : []);
       for (const seg of prep.segments) {
         if (!seg.length) continue;
         ctx.beginPath();
@@ -1218,6 +1237,8 @@
         });
         ctx.stroke();
       }
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
     });
 
     renderLegend();
@@ -1229,7 +1250,7 @@
       const el = document.createElement("span");
       el.className = "item" + (state.hiddenSeries.has(s.id) ? " off" : "");
       el.dataset.id = s.id;
-      el.innerHTML = `<span class="swatch" style="background:${seriesColor(i)}"></span>${esc(s.label || s.id)}`;
+      el.innerHTML = `<span class="swatch" style="background:${colorForSeries(s, i)}"></span>${esc(s.label || s.id)}`;
       el.addEventListener("click", () => {
         if (state.hiddenSeries.has(s.id)) state.hiddenSeries.delete(s.id);
         else state.hiddenSeries.add(s.id);
@@ -1314,16 +1335,133 @@
     return true;
   }
 
+  /** Time bucket size for hashrate-by-type aggregation (ms). */
+  function typeAggBucketMs() {
+    const { since, until } = chartWindowBounds();
+    const span = Math.max(1, until - since);
+    const pollSec = (state.meta && state.meta.poll_interval_sec) || 30;
+    const pollMs = Math.max(15, pollSec) * 1000;
+    if (span <= 4 * 3600 * 1000) return Math.max(pollMs, 30 * 1000);
+    if (span <= 24 * 3600 * 1000) return Math.max(pollMs, 60 * 1000);
+    if (span <= 3 * 24 * 3600 * 1000) return 5 * 60 * 1000;
+    return 15 * 60 * 1000;
+  }
+
+  function typeGroupKey(s) {
+    const make = (s.make || "").trim();
+    const model = (s.model || "").trim();
+    if (make && model) return { key: `${make}\0${model}`, make, model, label: `${make} ${model}` };
+    if (make) return { key: make, make, model: "", label: make };
+    if (model) return { key: model, make: "", model, label: model };
+    return { key: "unknown", make: "", model: "", label: "Unknown" };
+  }
+
+  /**
+   * Collapse per-miner hashrate series into avg / min / max per make+model.
+   * Samples are bucketed in time so miners polled a few seconds apart line up.
+   */
+  function aggregateHashrateByType(seriesList) {
+    const bucketMs = typeAggBucketMs();
+    const groups = new Map(); // key -> { make, model, label, buckets: Map<t, number[]> }
+
+    for (const s of seriesList || []) {
+      const g = typeGroupKey(s);
+      let entry = groups.get(g.key);
+      if (!entry) {
+        entry = { make: g.make, model: g.model, label: g.label, buckets: new Map() };
+        groups.set(g.key, entry);
+      }
+      for (const p of s.points || []) {
+        const t = new Date(p.t).getTime();
+        const v = Number(p.v);
+        if (!Number.isFinite(t) || !Number.isFinite(v)) continue;
+        const b = Math.floor(t / bucketMs) * bucketMs;
+        let arr = entry.buckets.get(b);
+        if (!arr) {
+          arr = [];
+          entry.buckets.set(b, arr);
+        }
+        arr.push(v);
+      }
+    }
+
+    const keys = [...groups.keys()].sort((a, b) => {
+      const la = groups.get(a).label.toLowerCase();
+      const lb = groups.get(b).label.toLowerCase();
+      return la < lb ? -1 : la > lb ? 1 : 0;
+    });
+
+    const out = [];
+    keys.forEach((key, typeIdx) => {
+      const g = groups.get(key);
+      const times = [...g.buckets.keys()].sort((a, b) => a - b);
+      if (!times.length) return;
+
+      const avgPts = [];
+      const minPts = [];
+      const maxPts = [];
+      for (const t of times) {
+        const vals = g.buckets.get(t);
+        if (!vals || !vals.length) continue;
+        let min = vals[0];
+        let max = vals[0];
+        let sum = 0;
+        for (const v of vals) {
+          if (v < min) min = v;
+          if (v > max) max = v;
+          sum += v;
+        }
+        const iso = new Date(t).toISOString();
+        avgPts.push({ t: iso, v: sum / vals.length });
+        minPts.push({ t: iso, v: min });
+        maxPts.push({ t: iso, v: max });
+      }
+
+      const base = {
+        make: g.make,
+        model: g.model,
+        metric: "hashrate_by_type",
+        typeColor: typeIdx,
+      };
+      const slug = g.label.toLowerCase().replace(/\s+/g, "-");
+      out.push({
+        ...base,
+        id: `type:${slug}:avg`,
+        label: `${g.label} · avg`,
+        stat: "avg",
+        points: avgPts,
+      });
+      out.push({
+        ...base,
+        id: `type:${slug}:min`,
+        label: `${g.label} · min`,
+        stat: "min",
+        points: minPts,
+      });
+      out.push({
+        ...base,
+        id: `type:${slug}:max`,
+        label: `${g.label} · max`,
+        stat: "max",
+        points: maxPts,
+      });
+    });
+    return out;
+  }
+
   async function loadHistory() {
     const metric = els.chartMetric.value;
     const scope = els.chartScope.value;
     const timeQ = historyTimeParams();
+    const byType = metric === "hashrate_by_type";
+    // Grouped view is derived from per-miner hashrate samples.
+    const apiMetric = byType ? "hashrate" : metric;
 
     // Full window history (no ids) — includes miners no longer in the live fleet.
     let allSeries = [];
     try {
       const q = new URLSearchParams(timeQ);
-      q.set("metric", metric);
+      q.set("metric", apiMetric);
       allSeries = await api(`/api/history?${q.toString()}`);
     } catch {
       allSeries = [];
@@ -1331,13 +1469,28 @@
     fillFiltersFromHistory(allSeries);
 
     const liveById = new Map(state.miners.map((m) => [m.id, m]));
-    // Annotate departed series so the legend is clear.
+    // Fill make/model from live fleet when history rows lack them (needed for grouping).
     allSeries = allSeries.map((s) => {
-      if (liveById.has(s.id)) return s;
-      const base = s.label || s.id;
-      if (/\bleft\b/i.test(base)) return s;
-      return { ...s, label: `${base} · left` };
+      const live = liveById.get(s.id);
+      if (!live) return s;
+      return {
+        ...s,
+        make: s.make || live.make || "",
+        model: s.model || live.model || "",
+        firmware: s.firmware || live.firmware || "",
+        algo: s.algo || live.algo || "",
+        label: s.label || live.hostname || s.id,
+      };
     });
+    // Annotate departed series so the legend is clear (skip for type-agg source).
+    if (!byType) {
+      allSeries = allSeries.map((s) => {
+        if (liveById.has(s.id)) return s;
+        const base = s.label || s.id;
+        if (/\bleft\b/i.test(base)) return s;
+        return { ...s, label: `${base} · left` };
+      });
+    }
 
     let chartSeries = allSeries;
     if (scope === "selected" && state.selectedId) {
@@ -1349,9 +1502,14 @@
         // Not in live fleet: keep while in-window if identity filters match.
         return seriesPassesFilters(s);
       });
-      if (chartSeries.length > 40) chartSeries = chartSeries.slice(0, 40);
+      // Cap individual series; type aggregation wants the full filtered set.
+      if (!byType && chartSeries.length > 40) chartSeries = chartSeries.slice(0, 40);
     } else if (scope === "all") {
-      if (chartSeries.length > 40) chartSeries = chartSeries.slice(0, 40);
+      if (!byType && chartSeries.length > 40) chartSeries = chartSeries.slice(0, 40);
+    }
+
+    if (byType) {
+      chartSeries = aggregateHashrateByType(chartSeries);
     }
 
     state.history = chartSeries;
