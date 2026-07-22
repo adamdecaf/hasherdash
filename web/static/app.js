@@ -390,7 +390,7 @@
     chartCustomRange: $("chart-custom-range"),
     chartFrom: $("chart-from"),
     chartTo: $("chart-to"),
-    chartScope: $("chart-scope"),
+
     chart: $("chart"),
     legend: $("chart-legend"),
     tbody: $("miners-tbody"),
@@ -1250,7 +1250,10 @@
       const el = document.createElement("span");
       el.className = "item" + (state.hiddenSeries.has(s.id) ? " off" : "");
       el.dataset.id = s.id;
-      el.innerHTML = `<span class="swatch" style="background:${colorForSeries(s, i)}"></span>${esc(s.label || s.id)}`;
+      const name = (s.stat || s.metric === "hashrate_by_type")
+        ? (s.label || s.id)
+        : (s.label && !looksLikeIP(s.label) && !looksLikeMAC(s.label) ? s.label : hostnameLabel(s, null));
+      el.innerHTML = `<span class="swatch" style="background:${colorForSeries(s, i)}"></span>${esc(name)}`;
       el.addEventListener("click", () => {
         if (state.hiddenSeries.has(s.id)) state.hiddenSeries.delete(s.id);
         else state.hiddenSeries.add(s.id);
@@ -1360,7 +1363,33 @@
     return null;
   }
 
-  /** Attach make/model from the live fleet (by id, MAC, or IP). */
+  function looksLikeIP(s) {
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(String(s || "").trim());
+  }
+
+  function looksLikeMAC(s) {
+    return /^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i.test(String(s || "").trim()) ||
+      /^[0-9a-f]{12}$/i.test(String(s || "").trim());
+  }
+
+  /** Chart legend label: hostname only (never IP / MAC / raw id). */
+  function hostnameLabel(s, live) {
+    const host = String((live && live.hostname) || s.hostname || s.label || "").trim();
+    if (host && !looksLikeIP(host) && !looksLikeMAC(host)) return host;
+    const model = String((live && live.model) || s.model || "").trim();
+    if (model) return model;
+    const make = String((live && live.make) || s.make || "").trim();
+    if (make) return make;
+    return "miner";
+  }
+
+  /** Find live miner matching a history series id (stable id, MAC, or IP alias). */
+  function liveForSeries(s, byId, byMAC, byIP) {
+    const id = String(s.id || "").trim();
+    return byId.get(id) || byMAC.get(id.toLowerCase()) || byIP.get(id) || null;
+  }
+
+  /** Attach make/model/hostname from the live fleet (by id, MAC, or IP). */
   function enrichSeriesFromLive(seriesList, miners) {
     const byId = new Map();
     const byMAC = new Map();
@@ -1373,20 +1402,17 @@
       if (ip) byIP.set(ip, m);
     }
     return (seriesList || []).map((s) => {
-      const id = (s.id || "").trim();
-      const live =
-        byId.get(id) ||
-        byMAC.get(id.toLowerCase()) ||
-        byIP.get(id) ||
-        null;
-      if (!live) return s;
+      // Type-aggregated series already have human labels (Make Model · avg).
+      if (s.stat || s.metric === "hashrate_by_type") return s;
+      const live = liveForSeries(s, byId, byMAC, byIP);
       return {
         ...s,
-        make: s.make || live.make || "",
-        model: s.model || live.model || "",
-        firmware: s.firmware || live.firmware || "",
-        algo: s.algo || live.algo || "",
-        label: s.label || live.hostname || live.model || s.id,
+        make: (live && live.make) || s.make || "",
+        model: (live && live.model) || s.model || "",
+        firmware: (live && live.firmware) || s.firmware || "",
+        algo: (live && live.algo) || s.algo || "",
+        hostname: (live && live.hostname) || s.hostname || "",
+        label: hostnameLabel(s, live),
       };
     });
   }
@@ -1488,7 +1514,6 @@
 
   async function loadHistory() {
     const metric = els.chartMetric.value;
-    const scope = els.chartScope.value;
     const timeQ = historyTimeParams();
     const byType = metric === "hashrate_by_type";
     // Grouped view is derived from per-miner hashrate samples.
@@ -1505,38 +1530,36 @@
     }
     fillFiltersFromHistory(allSeries);
 
-    // Resolve make/model from live fleet (id, MAC, or IP) so type grouping
-    // never falls back to a bogus "Unknown" when the device is known.
+    // Resolve hostname/make/model from live fleet (id, MAC, or IP).
     allSeries = enrichSeriesFromLive(allSeries, state.miners);
-    const liveById = new Map(state.miners.map((m) => [m.id, m]));
 
-    let chartSeries = allSeries;
-    if (scope === "selected" && state.selectedId) {
-      chartSeries = allSeries.filter((s) => s.id === state.selectedId);
-    } else if (scope === "filtered") {
-      const liveFilteredIds = new Set(applyFilters(state.miners).map((m) => m.id));
-      chartSeries = allSeries.filter((s) => {
-        if (liveById.has(s.id)) return liveFilteredIds.has(s.id);
-        // Match filtered live miners by MAC/IP when history id is an alias.
-        const live =
-          state.miners.find(
-            (m) =>
-              m.id === s.id ||
-              (m.mac && m.mac.toLowerCase() === String(s.id).toLowerCase()) ||
-              m.ip === s.id,
-          ) || null;
-        if (live) return liveFilteredIds.has(live.id);
-        // Not in live fleet: keep while in-window if identity filters match.
-        return seriesPassesFilters(s);
-      });
-      // Cap individual series; type aggregation wants the full filtered set.
-      if (!byType && chartSeries.length > 40) chartSeries = chartSeries.slice(0, 40);
-    } else if (scope === "all") {
-      if (!byType && chartSeries.length > 40) chartSeries = chartSeries.slice(0, 40);
-    }
+    // Chart the filtered fleet (table filters). Legend toggles visibility;
+    // all series start selected (visible).
+    const liveFilteredIds = new Set(applyFilters(state.miners).map((m) => m.id));
+    const byId = new Map(state.miners.map((m) => [m.id, m]));
+    const byMAC = new Map(
+      state.miners.filter((m) => m.mac).map((m) => [String(m.mac).toLowerCase(), m]),
+    );
+    const byIP = new Map(state.miners.filter((m) => m.ip).map((m) => [m.ip, m]));
+
+    let chartSeries = allSeries.filter((s) => {
+      const live = liveForSeries(s, byId, byMAC, byIP);
+      if (live) return liveFilteredIds.has(live.id);
+      // In-window history for miners not currently listed: keep if filters match.
+      return seriesPassesFilters(s);
+    });
+    // Cap individual series; type aggregation wants the full filtered set.
+    if (!byType && chartSeries.length > 40) chartSeries = chartSeries.slice(0, 40);
 
     if (byType) {
       chartSeries = aggregateHashrateByType(chartSeries);
+    }
+
+    // Drop stale legend hide flags for series that are gone; keep user toggles
+    // for series still present. New series are visible by default.
+    const present = new Set(chartSeries.map((s) => s.id));
+    for (const id of [...state.hiddenSeries]) {
+      if (!present.has(id)) state.hiddenSeries.delete(id);
     }
 
     state.history = chartSeries;
@@ -1646,16 +1669,15 @@
     for (const el of filterInputs) {
       el.addEventListener("input", () => {
         renderTable();
-        if (els.chartScope.value === "filtered") loadHistory();
+        loadHistory();
       });
       el.addEventListener("change", () => {
         renderTable();
-        if (els.chartScope.value === "filtered") loadHistory();
+        loadHistory();
       });
     }
 
     els.chartMetric.addEventListener("change", () => loadHistory());
-    els.chartScope.addEventListener("change", () => loadHistory());
 
     if (els.chartRange) {
       syncChartRangeUI();
@@ -1718,7 +1740,6 @@
       state.selectedId = tr.dataset.id;
       renderTable();
       loadDetail(state.selectedId);
-      if (els.chartScope.value === "selected") loadHistory();
     });
 
     if (els.btnColumns && els.columnsPanel) {

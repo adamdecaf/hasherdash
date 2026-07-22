@@ -558,19 +558,16 @@ func sortedKeys(m map[string]struct{}) []string {
 	return out
 }
 
-// seriesLabel prefers human-friendly identity over the raw stable id.
+// seriesLabel prefers hostname for chart legends — never IP or raw id.
 func seriesLabel(d models.Detail, id string) string {
-	if d.Hostname != "" {
-		return d.Hostname
-	}
-	if d.MAC != "" && d.IP != "" {
-		if d.Model != "" {
-			return d.Model + " " + d.IP
-		}
-		return d.IP
+	if h := strings.TrimSpace(d.Hostname); h != "" {
+		return h
 	}
 	if d.Model != "" {
-		return d.Model + " " + id
+		return d.Model
 	}
-	return id
+	if d.Make != "" {
+		return d.Make
+	}
+	return ""
 }
