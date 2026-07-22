@@ -1347,18 +1347,54 @@
     return 15 * 60 * 1000;
   }
 
+  /**
+   * Group key for hashrate-by-type. Requires a real make and/or model —
+   * never invents an "Unknown" bucket (untyped series are skipped).
+   */
   function typeGroupKey(s) {
     const make = (s.make || "").trim();
     const model = (s.model || "").trim();
     if (make && model) return { key: `${make}\0${model}`, make, model, label: `${make} ${model}` };
+    if (model) return { key: `\0${model}`, make: "", model, label: model };
     if (make) return { key: make, make, model: "", label: make };
-    if (model) return { key: model, make: "", model, label: model };
-    return { key: "unknown", make: "", model: "", label: "Unknown" };
+    return null;
+  }
+
+  /** Attach make/model from the live fleet (by id, MAC, or IP). */
+  function enrichSeriesFromLive(seriesList, miners) {
+    const byId = new Map();
+    const byMAC = new Map();
+    const byIP = new Map();
+    for (const m of miners || []) {
+      if (m.id) byId.set(m.id, m);
+      const mac = (m.mac || "").trim().toLowerCase();
+      if (mac) byMAC.set(mac, m);
+      const ip = (m.ip || "").trim();
+      if (ip) byIP.set(ip, m);
+    }
+    return (seriesList || []).map((s) => {
+      const id = (s.id || "").trim();
+      const live =
+        byId.get(id) ||
+        byMAC.get(id.toLowerCase()) ||
+        byIP.get(id) ||
+        null;
+      if (!live) return s;
+      return {
+        ...s,
+        make: s.make || live.make || "",
+        model: s.model || live.model || "",
+        firmware: s.firmware || live.firmware || "",
+        algo: s.algo || live.algo || "",
+        label: s.label || live.hostname || live.model || s.id,
+      };
+    });
   }
 
   /**
    * Collapse per-miner hashrate series into avg / min / max per make+model.
    * Samples are bucketed in time so miners polled a few seconds apart line up.
+   * Series without make/model are omitted (no Unknown group).
    */
   function aggregateHashrateByType(seriesList) {
     const bucketMs = typeAggBucketMs();
@@ -1366,6 +1402,7 @@
 
     for (const s of seriesList || []) {
       const g = typeGroupKey(s);
+      if (!g) continue;
       let entry = groups.get(g.key);
       if (!entry) {
         entry = { make: g.make, model: g.model, label: g.label, buckets: new Map() };
@@ -1468,29 +1505,10 @@
     }
     fillFiltersFromHistory(allSeries);
 
+    // Resolve make/model from live fleet (id, MAC, or IP) so type grouping
+    // never falls back to a bogus "Unknown" when the device is known.
+    allSeries = enrichSeriesFromLive(allSeries, state.miners);
     const liveById = new Map(state.miners.map((m) => [m.id, m]));
-    // Fill make/model from live fleet when history rows lack them (needed for grouping).
-    allSeries = allSeries.map((s) => {
-      const live = liveById.get(s.id);
-      if (!live) return s;
-      return {
-        ...s,
-        make: s.make || live.make || "",
-        model: s.model || live.model || "",
-        firmware: s.firmware || live.firmware || "",
-        algo: s.algo || live.algo || "",
-        label: s.label || live.hostname || s.id,
-      };
-    });
-    // Annotate departed series so the legend is clear (skip for type-agg source).
-    if (!byType) {
-      allSeries = allSeries.map((s) => {
-        if (liveById.has(s.id)) return s;
-        const base = s.label || s.id;
-        if (/\bleft\b/i.test(base)) return s;
-        return { ...s, label: `${base} · left` };
-      });
-    }
 
     let chartSeries = allSeries;
     if (scope === "selected" && state.selectedId) {
@@ -1499,6 +1517,15 @@
       const liveFilteredIds = new Set(applyFilters(state.miners).map((m) => m.id));
       chartSeries = allSeries.filter((s) => {
         if (liveById.has(s.id)) return liveFilteredIds.has(s.id);
+        // Match filtered live miners by MAC/IP when history id is an alias.
+        const live =
+          state.miners.find(
+            (m) =>
+              m.id === s.id ||
+              (m.mac && m.mac.toLowerCase() === String(s.id).toLowerCase()) ||
+              m.ip === s.id,
+          ) || null;
+        if (live) return liveFilteredIds.has(live.id);
         // Not in live fleet: keep while in-window if identity filters match.
         return seriesPassesFilters(s);
       });
