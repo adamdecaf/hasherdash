@@ -74,12 +74,13 @@ func (a *AsicSource) Collect(ctx context.Context) ([]models.Detail, error) {
 			defer func() { <-sem }()
 			d, err := pollOne(ip, a.cfg.ScanTimeoutSec)
 			if err != nil {
-				ch <- result{d: models.Detail{Snapshot: models.Snapshot{
-					ID:        ip,
+				snap := models.Snapshot{
 					IP:        ip,
 					Error:     err.Error(),
 					UpdatedAt: time.Now().UTC(),
-				}}}
+				}
+				models.ApplyStableID(&snap)
+				ch <- result{d: models.Detail{Snapshot: snap}}
 				return
 			}
 			ch <- result{d: d}
@@ -117,7 +118,7 @@ func (a *AsicSource) RequestRescan() {
 }
 
 // Forget drops discovered IPs (not static config) so pruned miners stop being polled
-// until a future full scan finds them again.
+// until a future full scan finds them again. ids are miner IPs from store.Prune.
 func (a *AsicSource) Forget(ids []string) {
 	if len(ids) == 0 {
 		return
@@ -128,15 +129,15 @@ func (a *AsicSource) Forget(ids []string) {
 	for _, ip := range a.staticIPs {
 		static[ip] = struct{}{}
 	}
-	for _, id := range ids {
-		id = strings.TrimSpace(id)
-		if id == "" {
+	for _, ip := range ids {
+		ip = strings.TrimSpace(ip)
+		if ip == "" {
 			continue
 		}
-		if _, ok := static[id]; ok {
+		if _, ok := static[ip]; ok {
 			continue
 		}
-		delete(a.discovered, id)
+		delete(a.discovered, ip)
 	}
 }
 
@@ -285,7 +286,6 @@ func pollOne(ip string, timeoutSec int) (models.Detail, error) {
 func detailFromMinerData(data *asicrs.MinerData) models.Detail {
 	now := time.Now().UTC()
 	snap := models.Snapshot{
-		ID:         data.IP,
 		IP:         data.IP,
 		Make:       data.DeviceInfo.Make,
 		Model:      data.DeviceInfo.Model,
@@ -308,6 +308,7 @@ func detailFromMinerData(data *asicrs.MinerData) models.Detail {
 	if data.SerialNumber != nil {
 		snap.Serial = *data.SerialNumber
 	}
+	models.ApplyStableID(&snap)
 	if data.ExpectedHashrate != nil {
 		snap.ExpectedTH = data.ExpectedHashrate.TH()
 	}

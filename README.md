@@ -75,6 +75,8 @@ docker run --rm --network host \
 
 Subnets are re-scanned every `rescan_interval` (default 30m). Discovered miners stay in the fleet until `miner_ttl` (default 7d) after last successful poll, and are re-polled every `poll_interval` (default 30s).
 
+Miners are tracked by a **stable identity** so DHCP IP changes don’t split one box into two rows or break chart history: **MAC** (preferred), then **serial**, then a distinctive **hostname**, then IP. Generic factory hostnames like `bitaxe` are ignored for identity.
+
 ## Local run (no Docker)
 
 Needs a built [asic-rs-go](https://github.com/adamdecaf/asic-rs-go) FFI (sibling checkout is simplest):

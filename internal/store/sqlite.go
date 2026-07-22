@@ -227,11 +227,7 @@ func (s *Store) historyFromDB(metric string, ids []string, opts HistoryOptions) 
 			ser.Model = d.Model
 			ser.Firmware = d.Firmware
 			ser.Algo = d.Algo
-			if d.Hostname != "" {
-				ser.Label = d.Hostname
-			} else if d.Model != "" {
-				ser.Label = d.Model + " " + id
-			}
+			ser.Label = seriesLabel(d, id)
 		}
 	}
 	s.mu.RUnlock()
@@ -262,6 +258,32 @@ func (s *Store) deleteMetricsForMiners(ids []string) error {
 		if _, err := stmt.Exec(id); err != nil {
 			return err
 		}
+	}
+	return tx.Commit()
+}
+
+// renameMetrics moves SQLite samples from oldID to newID (identity promotion).
+// On primary-key conflict the destination row wins and the source is dropped.
+func (s *Store) renameMetrics(oldID, newID string) error {
+	if s.db == nil || oldID == "" || newID == "" || oldID == newID {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Copy rows that don't already exist under newID.
+	if _, err := tx.Exec(`
+INSERT INTO metric_samples (miner_id, metric, ts, value)
+SELECT ?, metric, ts, value FROM metric_samples WHERE miner_id = ?
+ON CONFLICT(miner_id, metric, ts) DO NOTHING
+`, newID, oldID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM metric_samples WHERE miner_id = ?`, oldID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

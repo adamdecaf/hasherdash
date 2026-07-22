@@ -1,10 +1,15 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Snapshot is a compact, filter-friendly view of one miner at poll time.
 type Snapshot struct {
-	ID          string  `json:"id"` // IP
+	// ID is a stable identity for the physical miner (see StableID).
+	// IPs can change; MAC / serial usually do not.
+	ID          string  `json:"id"`
 	IP          string  `json:"ip"`
 	MAC         string  `json:"mac,omitempty"`
 	Hostname    string  `json:"hostname,omitempty"`
@@ -43,6 +48,102 @@ type Snapshot struct {
 	Error         string    `json:"error,omitempty"`
 	LastSeen      time.Time `json:"last_seen"`
 	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// StableID picks a durable miner key so the same hardware stays one row
+// when its DHCP address changes.
+//
+// Preference: normalized MAC → serial → hostname → IP.
+// Hostname is only used when it looks device-specific (not a bare vendor
+// default like "bitaxe"), so identical factory names don't collapse the fleet.
+func StableID(mac, hostname, serial, ip string) string {
+	if m := NormalizeMAC(mac); m != "" {
+		return m
+	}
+	if s := strings.TrimSpace(serial); s != "" {
+		return "sn:" + strings.ToLower(s)
+	}
+	if h := DistinctiveHostname(hostname); h != "" {
+		return "host:" + h
+	}
+	return strings.TrimSpace(ip)
+}
+
+// DistinctiveHostname returns a lowercased hostname usable as identity, or "".
+// Generic factory names (e.g. "bitaxe") are rejected so identical defaults
+// don't collapse separate units into one row.
+func DistinctiveHostname(hostname string) string {
+	h := strings.ToLower(strings.TrimSpace(hostname))
+	if h == "" {
+		return ""
+	}
+	switch h {
+	case "bitaxe", "nerdaxe", "nerdminter", "localhost", "miner", "asic",
+		"antminer", "whatsminer", "avalon", "esp32":
+		return ""
+	}
+	return h
+}
+
+// NormalizeMAC lowercases and unifies separators to colon form.
+// Returns "" if mac is empty or not a plausible address.
+func NormalizeMAC(mac string) string {
+	mac = strings.TrimSpace(strings.ToLower(mac))
+	if mac == "" {
+		return ""
+	}
+	// Accept aa:bb:…, aa-bb-…, aabbccddeeff
+	var hex []byte
+	for i := 0; i < len(mac); i++ {
+		c := mac[i]
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'f':
+			hex = append(hex, c)
+		case c == ':' || c == '-' || c == '.':
+			// skip separators
+		default:
+			return ""
+		}
+	}
+	if len(hex) != 12 {
+		return ""
+	}
+	// Reject all-zero (some firmwares report a placeholder).
+	allZero := true
+	for _, c := range hex {
+		if c != '0' {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(17)
+	for i, c := range hex {
+		if i > 0 && i%2 == 0 {
+			b.WriteByte(':')
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+// ApplyStableID sets snap.ID from MAC / serial / hostname / IP and normalizes MAC.
+func ApplyStableID(snap *Snapshot) {
+	if snap == nil {
+		return
+	}
+	if m := NormalizeMAC(snap.MAC); m != "" {
+		snap.MAC = m
+	} else {
+		snap.MAC = strings.TrimSpace(snap.MAC)
+	}
+	snap.Hostname = strings.TrimSpace(snap.Hostname)
+	snap.Serial = strings.TrimSpace(snap.Serial)
+	snap.IP = strings.TrimSpace(snap.IP)
+	snap.ID = StableID(snap.MAC, snap.Hostname, snap.Serial, snap.IP)
 }
 
 // Detail is the full snapshot plus raw-ish board/fan/pool rows for the side panel.

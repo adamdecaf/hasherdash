@@ -1287,12 +1287,39 @@
     saveChartCustom();
   }
 
+  /**
+   * Filters that can be evaluated on a history series alone (no live snapshot).
+   * Used so miners that left the fleet still appear on the chart while they
+   * have samples inside the selected window.
+   */
+  function seriesPassesFilters(s) {
+    const q = els.search.value.trim().toLowerCase();
+    const makes = multiValues(els.make);
+    const models = multiValues(els.model);
+    const fws = multiValues(els.firmware);
+    const algos = multiValues(els.algo);
+    // Live-only filters (mining / errors / numeric ranges) do not exclude
+    // departed miners — they have no current snapshot.
+    if (q) {
+      const hay = [s.id, s.label, s.make, s.model, s.firmware, s.algo]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (makes.length && !makes.includes(s.make)) return false;
+    if (models.length && !models.includes(s.model)) return false;
+    if (fws.length && !fws.includes(s.firmware)) return false;
+    if (algos.length && !algos.includes(s.algo)) return false;
+    return true;
+  }
+
   async function loadHistory() {
     const metric = els.chartMetric.value;
     const scope = els.chartScope.value;
     const timeQ = historyTimeParams();
 
-    // Full fleet history (no ids) supplies brand/model facets for filters.
+    // Full window history (no ids) — includes miners no longer in the live fleet.
     let allSeries = [];
     try {
       const q = new URLSearchParams(timeQ);
@@ -1303,14 +1330,28 @@
     }
     fillFiltersFromHistory(allSeries);
 
+    const liveById = new Map(state.miners.map((m) => [m.id, m]));
+    // Annotate departed series so the legend is clear.
+    allSeries = allSeries.map((s) => {
+      if (liveById.has(s.id)) return s;
+      const base = s.label || s.id;
+      if (/\bleft\b/i.test(base)) return s;
+      return { ...s, label: `${base} · left` };
+    });
+
     let chartSeries = allSeries;
     if (scope === "selected" && state.selectedId) {
       chartSeries = allSeries.filter((s) => s.id === state.selectedId);
     } else if (scope === "filtered") {
-      let ids = applyFilters(state.miners).map((m) => m.id);
-      if (ids.length > 40) ids = ids.slice(0, 40);
-      const want = new Set(ids);
-      chartSeries = allSeries.filter((s) => want.has(s.id));
+      const liveFilteredIds = new Set(applyFilters(state.miners).map((m) => m.id));
+      chartSeries = allSeries.filter((s) => {
+        if (liveById.has(s.id)) return liveFilteredIds.has(s.id);
+        // Not in live fleet: keep while in-window if identity filters match.
+        return seriesPassesFilters(s);
+      });
+      if (chartSeries.length > 40) chartSeries = chartSeries.slice(0, 40);
+    } else if (scope === "all") {
+      if (chartSeries.length > 40) chartSeries = chartSeries.slice(0, 40);
     }
 
     state.history = chartSeries;

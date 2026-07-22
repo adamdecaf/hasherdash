@@ -19,8 +19,9 @@ type Source interface {
 }
 
 // Forgetter can drop discovered IPs that the store has pruned.
+// Forget receives miner IPs (not stable ids), matching store.Prune.
 type Forgetter interface {
-	Forget(ids []string)
+	Forget(ips []string)
 }
 
 // Rescanner can force a full discovery scan on the next collect.

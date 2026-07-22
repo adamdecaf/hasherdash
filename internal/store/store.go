@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -130,29 +131,38 @@ func (s *Store) SetPolling(v bool) {
 }
 
 // Upsert replaces a miner snapshot and appends history samples on success.
+// Miners are keyed by a stable identity (MAC → serial → hostname → IP) so a
+// device that changes address stays one row with continuous history.
 // Failed polls merge an error onto any existing snapshot without wiping
 // identity / last-good telemetry, and do not advance LastSeen.
 func (s *Store) Upsert(d models.Detail) {
 	var samples []metricSample
+	var rekeys [][2]string // oldID → newID
 
 	s.mu.Lock()
 	now := time.Now().UTC()
 	if d.UpdatedAt.IsZero() {
 		d.UpdatedAt = now
 	}
+	models.ApplyStableID(&d.Snapshot)
 
-	existing, had := s.miners[d.ID]
+	existingID, existing, had := s.findMinerLocked(d)
 
 	if d.Error != "" {
 		if had {
 			merged := existing
 			merged.Error = d.Error
 			merged.UpdatedAt = d.UpdatedAt
+			// Keep stable id / MAC / hostname from the last good poll.
 			if merged.LastSeen.IsZero() {
 				// First contact was an error — start the TTL clock now.
 				merged.LastSeen = now
 			}
-			s.miners[d.ID] = merged
+			// Refresh IP if the error poll still knows where we tried.
+			if d.IP != "" {
+				merged.IP = d.IP
+			}
+			s.miners[existingID] = merged
 		} else {
 			if d.LastSeen.IsZero() {
 				d.LastSeen = now
@@ -165,9 +175,26 @@ func (s *Store) Upsert(d models.Detail) {
 
 	d.Error = ""
 	d.LastSeen = now
-	if d.UpdatedAt.IsZero() {
-		d.UpdatedAt = now
+
+	if had && existingID != d.ID {
+		// Promote IP/hostname-keyed row to MAC (or hostname) identity.
+		s.rekeyLocked(existingID, d.ID)
+		rekeys = append(rekeys, [2]string{existingID, d.ID})
 	}
+	// Drop any other row that still points at this IP under a different id
+	// (stale IP-keyed ghost after the device moved and we re-identified it).
+	if d.IP != "" {
+		for id, m := range s.miners {
+			if id == d.ID {
+				continue
+			}
+			if m.IP == d.IP {
+				s.rekeyLocked(id, d.ID)
+				rekeys = append(rekeys, [2]string{id, d.ID})
+			}
+		}
+	}
+
 	s.miners[d.ID] = d
 
 	samples = collectSamples(d)
@@ -178,9 +205,97 @@ func (s *Store) Upsert(d models.Detail) {
 	}
 	s.mu.Unlock()
 
-	if s.db != nil && len(samples) > 0 {
-		if err := s.insertSamples(samples); err != nil {
-			s.logf("store: insert metrics for %s: %v", d.ID, err)
+	if s.db != nil {
+		for _, pair := range rekeys {
+			if err := s.renameMetrics(pair[0], pair[1]); err != nil {
+				s.logf("store: rename metrics %s → %s: %v", pair[0], pair[1], err)
+			}
+		}
+		if len(samples) > 0 {
+			if err := s.insertSamples(samples); err != nil {
+				s.logf("store: insert metrics for %s: %v", d.ID, err)
+			}
+		}
+	}
+}
+
+// findMinerLocked locates an existing fleet entry for this poll.
+// Match order: exact stable id → same MAC → same serial → same IP →
+// distinctive hostname (only when the poll has no MAC/serial).
+func (s *Store) findMinerLocked(d models.Detail) (id string, existing models.Detail, ok bool) {
+	if d.ID != "" {
+		if m, hit := s.miners[d.ID]; hit {
+			return d.ID, m, true
+		}
+	}
+	mac := models.NormalizeMAC(d.MAC)
+	if mac != "" {
+		for mid, m := range s.miners {
+			if models.NormalizeMAC(m.MAC) == mac {
+				return mid, m, true
+			}
+		}
+	}
+	serial := strings.ToLower(strings.TrimSpace(d.Serial))
+	if serial != "" {
+		for mid, m := range s.miners {
+			if strings.ToLower(strings.TrimSpace(m.Serial)) == serial {
+				return mid, m, true
+			}
+		}
+	}
+	if d.IP != "" {
+		for mid, m := range s.miners {
+			if m.IP == d.IP {
+				return mid, m, true
+			}
+		}
+	}
+	// Hostname is a weaker signal; only when we lack stronger hardware ids.
+	if mac == "" && serial == "" {
+		if host := models.DistinctiveHostname(d.Hostname); host != "" {
+			for mid, m := range s.miners {
+				if models.NormalizeMAC(m.MAC) != "" || strings.TrimSpace(m.Serial) != "" {
+					continue
+				}
+				if models.DistinctiveHostname(m.Hostname) == host {
+					return mid, m, true
+				}
+			}
+		}
+	}
+	return "", models.Detail{}, false
+}
+
+// rekeyLocked moves a miner and its in-memory history from oldID to newID.
+// Caller holds s.mu. SQLite rows are renamed separately after unlock.
+func (s *Store) rekeyLocked(oldID, newID string) {
+	if oldID == "" || newID == "" || oldID == newID {
+		return
+	}
+	if old, ok := s.miners[oldID]; ok {
+		delete(s.miners, oldID)
+		if _, exists := s.miners[newID]; !exists {
+			old.ID = newID
+			s.miners[newID] = old
+		}
+	}
+	if oldHist, ok := s.history[oldID]; ok {
+		delete(s.history, oldID)
+		if s.history[newID] == nil {
+			s.history[newID] = oldHist
+			return
+		}
+		// Merge rings into the destination (best-effort; rare overlap).
+		for metric, src := range oldHist {
+			dst := s.history[newID][metric]
+			if dst == nil {
+				s.history[newID][metric] = src
+				continue
+			}
+			for _, p := range src.slice() {
+				dst.push(p)
+			}
 		}
 	}
 }
@@ -252,15 +367,17 @@ func (s *Store) MarkPoll(err error) {
 	}
 }
 
-// Prune removes miners whose LastSeen is older than ttl and drops their history.
-// Returns the pruned miner IDs. A non-positive ttl disables pruning.
+// Prune removes miners whose LastSeen is older than ttl from the live fleet.
+// Metric samples are kept so charts still show a departed miner until their
+// points age out of history_retention / the selected window. Returns the
+// pruned miners' IPs (for discovery forget). A non-positive ttl disables pruning.
 func (s *Store) Prune(ttl time.Duration) []string {
 	if ttl <= 0 {
 		return nil
 	}
 	s.mu.Lock()
 	cutoff := time.Now().UTC().Add(-ttl)
-	var removed []string
+	var removedIPs []string
 	for id, d := range s.miners {
 		seen := d.LastSeen
 		if seen.IsZero() {
@@ -270,18 +387,15 @@ func (s *Store) Prune(ttl time.Duration) []string {
 			continue
 		}
 		delete(s.miners, id)
-		delete(s.history, id)
-		removed = append(removed, id)
-	}
-	sort.Strings(removed)
-	s.mu.Unlock()
-
-	if len(removed) > 0 && s.db != nil {
-		if err := s.deleteMetricsForMiners(removed); err != nil {
-			s.logf("store: delete metrics for pruned miners: %v", err)
+		// Keep s.history rings so memory-mode charts retain the series until
+		// process restart; SQLite samples are owned by retention prune only.
+		if ip := strings.TrimSpace(d.IP); ip != "" {
+			removedIPs = append(removedIPs, ip)
 		}
 	}
-	return removed
+	sort.Strings(removedIPs)
+	s.mu.Unlock()
+	return removedIPs
 }
 
 // List returns all miner snapshots sorted by IP.
@@ -356,11 +470,7 @@ func (s *Store) historyFromMemory(metric string, ids []string, opts HistoryOptio
 			ser.Model = d.Model
 			ser.Firmware = d.Firmware
 			ser.Algo = d.Algo
-			if d.Hostname != "" {
-				ser.Label = d.Hostname
-			} else if d.Model != "" {
-				ser.Label = d.Model + " " + id
-			}
+			ser.Label = seriesLabel(d, id)
 		}
 		out = append(out, ser)
 	}
@@ -446,4 +556,21 @@ func sortedKeys(m map[string]struct{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// seriesLabel prefers human-friendly identity over the raw stable id.
+func seriesLabel(d models.Detail, id string) string {
+	if d.Hostname != "" {
+		return d.Hostname
+	}
+	if d.MAC != "" && d.IP != "" {
+		if d.Model != "" {
+			return d.Model + " " + d.IP
+		}
+		return d.IP
+	}
+	if d.Model != "" {
+		return d.Model + " " + id
+	}
+	return id
 }
