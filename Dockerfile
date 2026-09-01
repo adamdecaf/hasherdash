@@ -7,7 +7,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: fetch asic-rs-go module sources (Go proxy / sumdb)
 # -----------------------------------------------------------------------------
-FROM golang:1.24-bookworm AS mods
+FROM golang:1.26-bookworm AS mods
 WORKDIR /src
 COPY go.mod go.sum ./
 ENV GOTOOLCHAIN=auto
@@ -36,7 +36,7 @@ RUN cargo build --release \
 # -----------------------------------------------------------------------------
 # Stage 3: build hasherdash (Go + cgo)
 # -----------------------------------------------------------------------------
-FROM golang:1.24-bookworm AS build
+FROM golang:1.26-bookworm AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential \
     && rm -rf /var/lib/apt/lists/*
