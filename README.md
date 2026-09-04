@@ -9,6 +9,7 @@ Compact table, filters, miner detail, and live charts for a wall monitor (20+ mi
 **Highlights**
 
 - **Stable miner identity** — hostname (preferred) → MAC → serial → IP, so DHCP churn doesn’t split rows or chart history
+- **Best / session share** — per-miner all-time and session best-share difficulty (`best_diff` / `session_diff`), shown with compact suffixes (`483k`, `1.20M`)
 - **Charts** — per-miner series plus **hashrate by type** (avg/min/max); gaps break lines instead of bridging outages
 - **SQLite history** — samples survive restarts; departed miners stay on charts until retention ages them out
 - **Docker Hub** — `adamdecaf/hasherdash:<version>` and `:latest` on every `v*` tag
@@ -17,19 +18,19 @@ Compact table, filters, miner detail, and live charts for a wall monitor (20+ mi
 
 The image builds `asic-rs-go` from the public Go module proxy — no separate checkout.
 
-Published images: **[adamdecaf/hasherdash](https://hub.docker.com/r/adamdecaf/hasherdash)** (pushed on git tags `v*`). Latest release: **[v1.1.0](https://github.com/adamdecaf/hasherdash/releases/tag/v1.1.0)**.
+Published images: **[adamdecaf/hasherdash](https://hub.docker.com/r/adamdecaf/hasherdash)** (pushed on git tags `v*`). Latest release: **[v1.2.0](https://github.com/adamdecaf/hasherdash/releases/tag/v1.2.0)**.
 
 **Pull a release (no local build):**
 
 ```bash
 mkdir -p data
-docker pull adamdecaf/hasherdash:v1.1.0
+docker pull adamdecaf/hasherdash:1.2.0
 # or: docker pull adamdecaf/hasherdash:latest
 docker run --rm --network host \
   -e MINER_SUBNET=192.168.1.0/24 \
   -e SQLITE_PATH=/app/data/hasherdash.db \
   -v "$PWD/data:/app/data" \
-  adamdecaf/hasherdash:v1.1.0
+  adamdecaf/hasherdash:1.2.0
 ```
 
 **Docker Compose (recommended — uses Hub image, no auto-pull on every up):**
@@ -94,7 +95,7 @@ Miners are tracked by a **stable identity** so DHCP IP changes don’t split one
 
 Generic factory hostnames like `bitaxe` / `nerdaxe` are ignored for identity so identical defaults don’t collapse separate units. Chart legends prefer hostname labels. When a miner drops off the live fleet (TTL prune), its metric samples stay in SQLite until `history_retention` ages them out, so charts keep the series.
 
-The metrics chart supports per-miner lines and a **Hashrate by type** view that aggregates avg / min / max per make+model. Large gaps in samples break the line (and drop toward zero) instead of drawing a misleading bridge across missing data.
+The metrics chart supports per-miner lines and a **Hashrate by type** view that aggregates avg / min / max per make+model. **Best diff** and **Session diff** chart the last reported share difficulty (held across gaps). Large gaps in other samples break the line (and drop toward zero) instead of drawing a misleading bridge across missing data.
 
 UI refresh interval is separate from backend poll (top-right control, `localStorage`). Chart range defaults to **1d** with options for 4h / 12h / 1d / 3d / 7d / custom. **Refresh** and **Rescan** kick the backend immediately (no separate “Now” control).
 
@@ -213,7 +214,7 @@ Dockerfile         multi-stage (module proxy + Rust FFI + cgo)
 - Metric history uses pure-Go SQLite ([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)); no extra system library.
 - Docker builds pull `github.com/adamdecaf/asic-rs-go` and compile the FFI inside the image.
 - CI builds the binary and Docker image on every push/PR.
-- Release tags `v*` publish two Hub tags: `adamdecaf/hasherdash:<version>` (e.g. `1.1.0` from `v1.1.0`) and `adamdecaf/hasherdash:latest`. Compose uses the Hub image; run `docker compose pull` to upgrade.
+- Release tags `v*` publish two Hub tags: `adamdecaf/hasherdash:<version>` (e.g. `1.2.0` from `v1.2.0`) and `adamdecaf/hasherdash:latest`. Compose uses the Hub image; run `docker compose pull` to upgrade.
 - Local publish: `make docker-push` (after `docker login`; override with `DOCKER_IMAGE=` / `VERSION=`).
 - GitHub Actions secrets for Hub publish: `DOCKER_USERNAME`, `DOCKER_PASSWORD` (Hub password or access token with write access).
 

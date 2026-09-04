@@ -41,11 +41,12 @@
         <div class="hero-actions">
           <a class="btn btn-primary" href="#quickstart">Get started</a>
           <a class="btn" href="https://github.com/adamdecaf/hasherdash">View on GitHub</a>
-          <a class="btn" href="https://github.com/adamdecaf/hasherdash/releases/tag/v1.1.0">v1.1.0</a>
+          <a class="btn" href="https://github.com/adamdecaf/hasherdash/releases/tag/v1.2.0">v1.2.0</a>
         </div>
         <ul class="hero-meta">
           <li>Subnet discovery</li>
           <li>Stable miner identity</li>
+          <li>Best / session share</li>
           <li>Live metrics &amp; charts</li>
           <li>SQLite history</li>
           <li>Docker Hub images</li>
@@ -94,13 +95,14 @@
             <h3>Filter the noise</h3>
             <p>
               Search by IP, host, model, or serial. Narrow by brand, firmware, algo, status,
-              hashrate, temps, power, chips, and efficiency.
+              hashrate, temps, power, chips, efficiency, and best / session share.
             </p>
           </article>
           <article class="card">
             <h3>Live charts</h3>
             <p>
-              Per-miner hashrate, temps, wattage, efficiency, and chips — plus
+              Per-miner hashrate, temps, wattage, efficiency, chips, and
+              <strong>best / session share</strong> — plus
               <strong>hashrate by type</strong> (avg/min/max). Gaps break lines instead of
               bridging outages. Windows from 4h to 7d.
             </p>
@@ -115,7 +117,7 @@
           <article class="card">
             <h3>Miner detail</h3>
             <p>
-              Select a row for boards, fans, and pools without leaving the dashboard.
+              Select a row for boards, fans, pools, and best / session share without leaving the dashboard.
               Chart legends prefer hostname labels over raw IDs.
             </p>
           </article>
@@ -142,7 +144,7 @@
         <p class="section-lede">
           Docker is the fastest path. Published images:
           <a href="https://hub.docker.com/r/adamdecaf/hasherdash">adamdecaf/hasherdash</a>
-          (tag <code>v1.1.0</code> or <code>latest</code>). Host networking lets the container scan your LAN.
+          (tag <code>1.2.0</code> or <code>latest</code>). Host networking lets the container scan your LAN.
         </p>
 
         <div class="steps">
@@ -161,12 +163,12 @@ docker compose up -d
             <div>
               <h3>Or pull and run</h3>
               <pre><code>mkdir -p data
-docker pull adamdecaf/hasherdash:v1.1.0
+docker pull adamdecaf/hasherdash:1.2.0
 docker run --rm --network host \
   -e MINER_SUBNET=192.168.1.0/24 \
   -e SQLITE_PATH=/app/data/hasherdash.db \
   -v "$PWD/data:/app/data" \
-  adamdecaf/hasherdash:v1.1.0</code></pre>
+  adamdecaf/hasherdash:1.2.0</code></pre>
             </div>
           </div>
           <div class="step">
@@ -191,7 +193,7 @@ docker run --rm --network host \
   -v "$PWD/data:/app/data" \
   -e CONFIG_FILE=/app/hasherdash.yaml \
   -e SQLITE_PATH=/app/data/hasherdash.db \
-  adamdecaf/hasherdash:v1.1.0</code></pre>
+  adamdecaf/hasherdash:1.2.0</code></pre>
         </details>
 
         <details class="more">
