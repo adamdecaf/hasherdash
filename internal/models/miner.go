@@ -32,22 +32,30 @@ type Snapshot struct {
 	ASICTempMin float64 `json:"asic_temp_min,omitempty"`
 	ASICTempMax float64 `json:"asic_temp_max,omitempty"`
 	// VR / board (PCB) temperatures (°C) — min/max of board_temperature sensors.
-	HasVRTemp     bool      `json:"has_vr_temp,omitempty"`
-	VRTempMin     float64   `json:"vr_temp_min,omitempty"`
-	VRTempMax     float64   `json:"vr_temp_max,omitempty"`
-	FluidTempC    float64   `json:"fluid_temp_c,omitempty"`
-	TotalChips    int       `json:"total_chips,omitempty"`
-	ExpectedChips int       `json:"expected_chips,omitempty"`
-	Boards        int       `json:"boards,omitempty"`
-	Fans          int       `json:"fans,omitempty"`
-	UptimeSec     int64     `json:"uptime_sec,omitempty"`
-	LightFlashing bool      `json:"light_flashing,omitempty"`
-	PoolUsers     []string  `json:"pool_users,omitempty"`
-	PoolHosts     []string  `json:"pool_hosts,omitempty"`
-	Messages      []string  `json:"messages,omitempty"`
-	Error         string    `json:"error,omitempty"`
-	LastSeen      time.Time `json:"last_seen"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	HasVRTemp     bool     `json:"has_vr_temp,omitempty"`
+	VRTempMin     float64  `json:"vr_temp_min,omitempty"`
+	VRTempMax     float64  `json:"vr_temp_max,omitempty"`
+	FluidTempC    float64  `json:"fluid_temp_c,omitempty"`
+	TotalChips    int      `json:"total_chips,omitempty"`
+	ExpectedChips int      `json:"expected_chips,omitempty"`
+	Boards        int      `json:"boards,omitempty"`
+	Fans          int      `json:"fans,omitempty"`
+	UptimeSec     int64    `json:"uptime_sec,omitempty"`
+	LightFlashing bool     `json:"light_flashing,omitempty"`
+	PoolUsers     []string `json:"pool_users,omitempty"`
+	PoolHosts     []string `json:"pool_hosts,omitempty"`
+	// Best share difficulty (AxeOS bestDiff / bestSessionDiff). Numeric for
+	// sort/charts; *Text is the miner-reported display string ("483k").
+	HasBestDiff     bool      `json:"has_best_diff,omitempty"`
+	BestDiff        float64   `json:"best_diff,omitempty"`
+	BestDiffText    string    `json:"best_diff_text,omitempty"`
+	HasSessionDiff  bool      `json:"has_session_diff,omitempty"`
+	SessionDiff     float64   `json:"session_diff,omitempty"`
+	SessionDiffText string    `json:"session_diff_text,omitempty"`
+	Messages        []string  `json:"messages,omitempty"`
+	Error           string    `json:"error,omitempty"`
+	LastSeen        time.Time `json:"last_seen"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // StableID picks a durable miner key so the same hardware stays one row

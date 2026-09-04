@@ -88,7 +88,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		metric = "hashrate"
 	}
 	switch metric {
-	case "hashrate", "temp", "asic_temp", "asic_temp_min", "vr_temp", "vr_temp_min", "wattage", "efficiency", "chips":
+	case "hashrate", "temp", "asic_temp", "asic_temp_min", "vr_temp", "vr_temp_min", "wattage", "efficiency", "chips", "best_diff", "session_diff":
 	default:
 		http.Error(w, "invalid metric", http.StatusBadRequest)
 		return

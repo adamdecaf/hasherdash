@@ -192,9 +192,9 @@ Full template: `hasherdash.example.yaml`.
 | GET | `/api/history?metric=hashrate&ids=a,b&window=1d` | Time series (`window`, or `since`/`until` RFC3339) |
 | POST | `/api/rescan` | Kick a full subnet/range discovery + poll now |
 
-Stored metrics: `hashrate`, `temp`, `asic_temp`, `asic_temp_min`, `vr_temp`, `vr_temp_min`, `wattage`, `efficiency`, `chips`.
+Stored metrics: `hashrate`, `temp`, `asic_temp`, `asic_temp_min`, `vr_temp`, `vr_temp_min`, `wattage`, `efficiency`, `chips`, `best_diff`, `session_diff`.
 
-The UI also offers **`hashrate_by_type`** (client-side avg/min/max aggregation over per-miner hashrate).
+The UI also offers **`hashrate_by_type`** (client-side avg/min/max aggregation over per-miner hashrate). **`best_diff`** / **`session_diff`** come from AxeOS `bestDiff` / `bestSessionDiff` (Bitaxe / Nerdaxe).
 
 ## Project layout
 

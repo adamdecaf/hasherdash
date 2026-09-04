@@ -1,6 +1,9 @@
 package axetemp
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/adamdecaf/hasherdash/internal/models"
@@ -66,5 +69,79 @@ func TestMinMax(t *testing.T) {
 	}
 	if _, _, ok := MinMax(nil); ok {
 		t.Fatal("empty should not be ok")
+	}
+}
+
+func TestParseDiff(t *testing.T) {
+	cases := []struct {
+		in   string
+		want float64
+		ok   bool
+	}{
+		{"", 0, false},
+		{"0", 0, true},
+		{"12", 12, true},
+		{"483k", 483e3, true},
+		{"1.2M", 1.2e6, true},
+		{"1.23G", 1.23e9, true},
+		{"4.5T", 4.5e12, true},
+		{"  2.0k ", 2e3, true},
+		{"nope", 0, false},
+		{"-1", 0, false},
+	}
+	for _, tc := range cases {
+		got, ok := ParseDiff(tc.in)
+		if ok != tc.ok || (ok && got != tc.want) {
+			t.Errorf("ParseDiff(%q) = %v, %v; want %v, %v", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+func TestFormatDiff(t *testing.T) {
+	if got := FormatDiff(483000); got != "483k" {
+		t.Fatalf("483000 → %q", got)
+	}
+	if got := FormatDiff(1.2e6); got != "1.20M" {
+		t.Fatalf("1.2e6 → %q", got)
+	}
+	if got := FormatDiff(12); got != "12" {
+		t.Fatalf("12 → %q", got)
+	}
+}
+
+func TestFetchSystemInfo(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/system/info" {
+			t.Errorf("path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"temp": 59.9,
+			"vrTemp": 78.1,
+			"bestDiff": "483k",
+			"bestSessionDiff": "12.5M"
+		}`))
+	}))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	info, ok := FetchSystemInfo(host)
+	if !ok {
+		t.Fatal("FetchSystemInfo failed")
+	}
+	if info.Chip == nil || *info.Chip != 59.9 {
+		t.Fatalf("chip %#v", info.Chip)
+	}
+	if info.VR == nil || *info.VR != 78.1 {
+		t.Fatalf("vr %#v", info.VR)
+	}
+	if !info.HasBestDiff || info.BestDiff != 483e3 || info.BestDiffText != "483k" {
+		t.Fatalf("best %#v", info)
+	}
+	if !info.HasSessionDiff || info.SessionDiff != 12.5e6 || info.SessionDiffText != "12.5M" {
+		t.Fatalf("session %#v", info)
+	}
+	chip, vr, ok := FetchSystemTemps(host)
+	if !ok || chip != 59.9 || vr == nil || *vr != 78.1 {
+		t.Fatalf("FetchSystemTemps %v %v %v", chip, vr, ok)
 	}
 }
