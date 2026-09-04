@@ -194,7 +194,7 @@ Full template: `hasherdash.example.yaml`.
 
 Stored metrics: `hashrate`, `temp`, `asic_temp`, `asic_temp_min`, `vr_temp`, `vr_temp_min`, `wattage`, `efficiency`, `chips`, `best_diff`, `session_diff`.
 
-The UI also offers **`hashrate_by_type`** (client-side avg/min/max aggregation over per-miner hashrate). **`best_diff`** / **`session_diff`** come from AxeOS `bestDiff` / `bestSessionDiff` (Bitaxe / Nerdaxe).
+The UI also offers **`hashrate_by_type`** (client-side avg/min/max aggregation over per-miner hashrate). **`best_diff`** / **`session_diff`** come from asic-rs `best_share` / `session_best_share`.
 
 ## Project layout
 

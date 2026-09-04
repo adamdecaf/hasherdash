@@ -44,8 +44,8 @@ type Snapshot struct {
 	LightFlashing bool     `json:"light_flashing,omitempty"`
 	PoolUsers     []string `json:"pool_users,omitempty"`
 	PoolHosts     []string `json:"pool_hosts,omitempty"`
-	// Best share difficulty (AxeOS bestDiff / bestSessionDiff). Numeric for
-	// sort/charts; *Text is the miner-reported display string ("483k").
+	// Best share difficulty from asic-rs (all-time / this session).
+	// Numeric for sort/charts; *Text is a compact display form ("483k").
 	HasBestDiff     bool      `json:"has_best_diff,omitempty"`
 	BestDiff        float64   `json:"best_diff,omitempty"`
 	BestDiffText    string    `json:"best_diff_text,omitempty"`

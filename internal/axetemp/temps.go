@@ -52,20 +52,14 @@ func NeedsFallback(snap models.Snapshot) bool {
 	return false
 }
 
-// SystemInfo is the AxeOS /api/system/info subset hasherdash uses.
+// SystemInfo is the AxeOS /api/system/info subset used for temp fallback.
 type SystemInfo struct {
-	Chip            *float64
-	VR              *float64
-	BestDiff        float64
-	BestDiffText    string
-	HasBestDiff     bool
-	SessionDiff     float64
-	SessionDiffText string
-	HasSessionDiff  bool
+	Chip *float64
+	VR   *float64
 }
 
-// FetchSystemInfo reads Bitaxe/Nerdaxe /api/system/info for chip/VR temps
-// and best-share difficulty. Returns ok=false on any transport/parse failure.
+// FetchSystemInfo reads Bitaxe/Nerdaxe /api/system/info for chip/VR temps.
+// Returns ok=false on any transport/parse failure.
 func FetchSystemInfo(ip string) (SystemInfo, bool) {
 	var out SystemInfo
 	if ip == "" {
@@ -82,26 +76,14 @@ func FetchSystemInfo(ip string) (SystemInfo, bool) {
 		return out, false
 	}
 	var body struct {
-		Temp            *float64        `json:"temp"`
-		VRTemp          *float64        `json:"vrTemp"`
-		BestDiff        json.RawMessage `json:"bestDiff"`
-		BestSessionDiff json.RawMessage `json:"bestSessionDiff"`
+		Temp   *float64 `json:"temp"`
+		VRTemp *float64 `json:"vrTemp"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return out, false
 	}
 	out.Chip = body.Temp
 	out.VR = body.VRTemp
-	if v, text, ok := parseDiffJSON(body.BestDiff); ok {
-		out.BestDiff = v
-		out.BestDiffText = text
-		out.HasBestDiff = true
-	}
-	if v, text, ok := parseDiffJSON(body.BestSessionDiff); ok {
-		out.SessionDiff = v
-		out.SessionDiffText = text
-		out.HasSessionDiff = true
-	}
 	return out, true
 }
 

@@ -115,12 +115,7 @@ func TestFetchSystemInfo(t *testing.T) {
 			t.Errorf("path %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"temp": 59.9,
-			"vrTemp": 78.1,
-			"bestDiff": "483k",
-			"bestSessionDiff": "12.5M"
-		}`))
+		_, _ = w.Write([]byte(`{"temp": 59.9, "vrTemp": 78.1}`))
 	}))
 	defer srv.Close()
 	host := strings.TrimPrefix(srv.URL, "http://")
@@ -133,12 +128,6 @@ func TestFetchSystemInfo(t *testing.T) {
 	}
 	if info.VR == nil || *info.VR != 78.1 {
 		t.Fatalf("vr %#v", info.VR)
-	}
-	if !info.HasBestDiff || info.BestDiff != 483e3 || info.BestDiffText != "483k" {
-		t.Fatalf("best %#v", info)
-	}
-	if !info.HasSessionDiff || info.SessionDiff != 12.5e6 || info.SessionDiffText != "12.5M" {
-		t.Fatalf("session %#v", info)
 	}
 	chip, vr, ok := FetchSystemTemps(host)
 	if !ok || chip != 59.9 || vr == nil || *vr != 78.1 {

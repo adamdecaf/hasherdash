@@ -428,12 +428,22 @@ func detailFromMinerData(data *asicrs.MinerData) models.Detail {
 		snap.VRTempMax = maxV
 	}
 
-	// Bitaxe / Nerdaxe: asic-rs does not map bestDiff, and often drops the
-	// real chip "temp" (copying vrTemp into inlet/outlet). One AxeOS fetch
-	// fills both.
-	if axetemp.IsAxeFamily(snap.Make) {
+	if data.BestShare != nil {
+		snap.HasBestDiff = true
+		snap.BestDiff = *data.BestShare
+		snap.BestDiffText = axetemp.FormatDiff(*data.BestShare)
+	}
+	if data.SessionBestShare != nil {
+		snap.HasSessionDiff = true
+		snap.SessionDiff = *data.SessionBestShare
+		snap.SessionDiffText = axetemp.FormatDiff(*data.SessionBestShare)
+	}
+
+	// Bitaxe / Nerdaxe: asic-rs often copies vrTemp into chip inlet/outlet.
+	// Fetch AxeOS /api/system/info only when we still lack a distinct ASIC temp.
+	if axetemp.NeedsFallback(snap) {
 		if info, ok := axetemp.FetchSystemInfo(snap.IP); ok {
-			applyAxeSystemInfo(&snap, &detail, info)
+			applyAxeTemps(&snap, &detail, info)
 		}
 	}
 
@@ -476,20 +486,7 @@ func detailFromMinerData(data *asicrs.MinerData) models.Detail {
 	return detail
 }
 
-func applyAxeSystemInfo(snap *models.Snapshot, detail *models.Detail, info axetemp.SystemInfo) {
-	if info.HasBestDiff {
-		snap.HasBestDiff = true
-		snap.BestDiff = info.BestDiff
-		snap.BestDiffText = info.BestDiffText
-	}
-	if info.HasSessionDiff {
-		snap.HasSessionDiff = true
-		snap.SessionDiff = info.SessionDiff
-		snap.SessionDiffText = info.SessionDiffText
-	}
-	if !axetemp.NeedsFallback(*snap) {
-		return
-	}
+func applyAxeTemps(snap *models.Snapshot, detail *models.Detail, info axetemp.SystemInfo) {
 	if info.Chip != nil {
 		chip := *info.Chip
 		snap.HasASICTemp = true
