@@ -38,6 +38,25 @@ func TestUpsertAndHistory(t *testing.T) {
 	}
 }
 
+func TestBestDiffHistory(t *testing.T) {
+	st := New(10, 30)
+	now := time.Now().UTC()
+	st.Upsert(models.Detail{Snapshot: models.Snapshot{
+		IP: "10.0.0.3", Hostname: "nerdqaxe_44C1", Make: "NerdQAxe",
+		HashrateTH: 3.1, HasBestDiff: true, BestDiff: 483e3, BestDiffText: "483k",
+		HasSessionDiff: true, SessionDiff: 12e3, SessionDiffText: "12k",
+		UpdatedAt: now,
+	}})
+	hist := st.History("best_diff", nil, HistoryOptions{})
+	if len(hist) != 1 || len(hist[0].Points) != 1 || hist[0].Points[0].V != 483e3 {
+		t.Fatalf("best_diff %#v", hist)
+	}
+	sess := st.History("session_diff", nil, HistoryOptions{})
+	if len(sess) != 1 || len(sess[0].Points) != 1 || sess[0].Points[0].V != 12e3 {
+		t.Fatalf("session_diff %#v", sess)
+	}
+}
+
 func TestUpsertErrorPreservesSnapshot(t *testing.T) {
 	st := New(10, 30)
 	now := time.Now().UTC()

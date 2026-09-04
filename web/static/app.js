@@ -21,6 +21,8 @@
     { id: "avg_temp", label: "Avg °C", sort: "avg_temp_c", num: true, defaultOn: false },
     { id: "wattage", label: "W", sort: "wattage", num: true, defaultOn: true },
     { id: "efficiency", label: "J/TH", sort: "efficiency", num: true, defaultOn: true },
+    { id: "best_diff", label: "Best diff", sort: "best_diff", num: true, title: "All-time best share difficulty", defaultOn: true },
+    { id: "session_diff", label: "Session diff", sort: "session_diff", num: true, title: "Best share difficulty since last boot", defaultOn: false },
     { id: "total_chips", label: "Chips", sort: "total_chips", num: true, defaultOn: true },
     { id: "expected_chips", label: "Exp chips", sort: "expected_chips", num: true, defaultOn: false },
     { id: "boards", label: "Boards", sort: "boards", num: true, defaultOn: false },
@@ -540,6 +542,10 @@
         return m.has_asic_temp ? m.asic_temp_max : (m.avg_temp_c || 0);
       case "vr_temp_max":
         return m.has_vr_temp ? m.vr_temp_max : 0;
+      case "best_diff":
+        return m.has_best_diff ? m.best_diff : -1;
+      case "session_diff":
+        return m.has_session_diff ? m.session_diff : -1;
       case "pool_user":
         return (m.pool_users && m.pool_users[0]) || "";
       case "pool_host":
@@ -571,6 +577,30 @@
   function fmt(n, d = 1) {
     if (n == null || n === "" || Number.isNaN(n)) return "—";
     return Number(n).toFixed(d);
+  }
+
+  /** AxeOS-style difficulty: 483k, 1.20M, 12.3G. */
+  function fmtDiff(n) {
+    const v = Number(n);
+    if (!Number.isFinite(v) || v < 0) return "—";
+    const suf = [
+      [1e18, "E"], [1e15, "P"], [1e12, "T"],
+      [1e9, "G"], [1e6, "M"], [1e3, "k"],
+    ];
+    for (const [div, s] of suf) {
+      if (v >= div) {
+        const x = v / div;
+        const d = x >= 100 ? 0 : x >= 10 ? 1 : 2;
+        return x.toFixed(d) + s;
+      }
+    }
+    return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  }
+
+  function fmtDiffCell(has, n, text) {
+    if (!has) return "—";
+    if (text) return esc(text);
+    return fmtDiff(n);
   }
 
   /** Format min–max range; collapses to a single value when equal. */
@@ -736,6 +766,10 @@
         return fmt(m.wattage, 0);
       case "efficiency":
         return fmt(m.efficiency, 1);
+      case "best_diff":
+        return fmtDiffCell(m.has_best_diff, m.best_diff, m.best_diff_text);
+      case "session_diff":
+        return fmtDiffCell(m.has_session_diff, m.session_diff, m.session_diff_text);
       case "total_chips":
         return m.total_chips || "—";
       case "expected_chips":
@@ -968,6 +1002,8 @@
       ["Fluid temp", d.fluid_temp_c ? `${fmt(d.fluid_temp_c, 1)} °C` : "—"],
       ["Power", `${fmt(d.wattage, 0)} W`],
       ["Efficiency", `${fmt(d.efficiency, 2)} J/TH`],
+      ["Best diff", d.has_best_diff ? (d.best_diff_text || fmtDiff(d.best_diff)) : ""],
+      ["Session diff", d.has_session_diff ? (d.session_diff_text || fmtDiff(d.session_diff)) : ""],
       ["Chips", `${d.total_chips || "—"} / ${d.expected_chips || "—"}`],
       ["Boards", d.boards || "—"],
       ["Fans", d.fans || "—"],
@@ -1057,12 +1093,17 @@
     return Math.max(pollSec * 2.5, 90) * 1000;
   }
 
+  function chartHoldsValue() {
+    const m = els.chartMetric && els.chartMetric.value;
+    return m === "best_diff" || m === "session_diff";
+  }
+
   /**
    * Split a series into drawable segments. Large time holes become separate
    * segments with zero stubs at the edges so the line drops to 0 and does not
-   * bridge the empty space.
+   * bridge the empty space. Cumulative metrics pass hold=true to keep the last value.
    */
-  function chartSegments(points, gapMs, tMax) {
+  function chartSegments(points, gapMs, tMax, hold) {
     const pts = [];
     for (const p of points || []) {
       const t = new Date(p.t).getTime();
@@ -1085,12 +1126,13 @@
         const prev = seg[seg.length - 1];
         if (cur.t - prev.t > gapMs) {
           // Drop to zero after the last real sample, then break the path.
-          if (prev.v !== 0) {
+          // Cumulative metrics (best/session diff) hold the last value.
+          if (!hold && prev.v !== 0) {
             seg.push({ t: prev.t, v: 0 });
           }
           pushSeg();
           // Rise from zero into the next sample (separate segment).
-          if (cur.v !== 0) {
+          if (!hold && cur.v !== 0) {
             seg.push({ t: cur.t, v: 0 });
           }
         }
@@ -1102,7 +1144,7 @@
     if (seg.length && Number.isFinite(tMax)) {
       const last = seg[seg.length - 1];
       if (tMax - last.t > gapMs) {
-        if (last.v !== 0) {
+        if (!hold && last.v !== 0) {
           seg.push({ t: last.t, v: 0 });
         }
       }
@@ -1153,9 +1195,10 @@
     let tMin = win.since;
     let tMax = win.until;
     const gapMs = chartGapThresholdMs();
+    const holdValue = chartHoldsValue();
     const prepared = series.map((s) => ({
       series: s,
-      segments: chartSegments(s.points, gapMs, tMax),
+      segments: chartSegments(s.points, gapMs, tMax, holdValue),
     }));
 
     let vMin = Infinity, vMax = -Infinity;
@@ -1180,8 +1223,8 @@
     if (Number.isFinite(dataTMin) && dataTMin < tMin) tMin = dataTMin;
     if (Number.isFinite(dataTMax) && dataTMax > tMax) tMax = dataTMax;
     if (tMin === tMax) tMax = tMin + 1;
-    // Missing-data zeros should sit on the baseline.
-    if (hasGaps && vMin > 0) vMin = 0;
+    // Missing-data zeros should sit on the baseline (not for cumulative diffs).
+    if (hasGaps && vMin > 0 && !holdValue) vMin = 0;
     if (vMin === vMax) {
       vMin = vMin - 1;
       vMax = vMax + 1;
@@ -1218,7 +1261,7 @@
     for (let i = 0; i <= 4; i++) {
       const v = vMax - ((vMax - vMin) * i) / 4;
       const y = pad.t + (plotH * i) / 4;
-      ctx.fillText(fmt(v, vMax - vMin > 20 ? 0 : 1), pad.l - 6, y);
+      ctx.fillText(holdValue ? fmtDiff(v) : fmt(v, vMax - vMin > 20 ? 0 : 1), pad.l - 6, y);
     }
     // x labels — include date when the window spans more than ~1 day
     ctx.textAlign = "center";

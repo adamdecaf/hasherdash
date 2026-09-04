@@ -428,32 +428,22 @@ func detailFromMinerData(data *asicrs.MinerData) models.Detail {
 		snap.VRTempMax = maxV
 	}
 
-	// Bitaxe / Nerdaxe: asic-rs often drops the real chip "temp" field and only
-	// surfaces vrTemp (as board + fake inlet/outlet). Fetch /api/system/info
-	// when we still lack a distinct ASIC reading.
+	if data.BestShare != nil {
+		snap.HasBestDiff = true
+		snap.BestDiff = *data.BestShare
+		snap.BestDiffText = axetemp.FormatDiff(*data.BestShare)
+	}
+	if data.SessionBestShare != nil {
+		snap.HasSessionDiff = true
+		snap.SessionDiff = *data.SessionBestShare
+		snap.SessionDiffText = axetemp.FormatDiff(*data.SessionBestShare)
+	}
+
+	// Bitaxe / Nerdaxe: asic-rs often copies vrTemp into chip inlet/outlet.
+	// Fetch AxeOS /api/system/info only when we still lack a distinct ASIC temp.
 	if axetemp.NeedsFallback(snap) {
-		if chip, vr, ok := axetemp.FetchSystemTemps(snap.IP); ok {
-			if !snap.HasASICTemp {
-				snap.HasASICTemp = true
-				snap.ASICTempMin = chip
-				snap.ASICTempMax = chip
-				if len(detail.Hashboards) > 0 {
-					detail.Hashboards[0].ASICTempIn = chip
-					detail.Hashboards[0].ASICTempOut = chip
-					detail.Hashboards[0].HasASICIn = true
-					detail.Hashboards[0].HasASICOut = true
-				}
-			}
-			if !snap.HasVRTemp && vr != nil {
-				snap.HasVRTemp = true
-				snap.VRTempMin = *vr
-				snap.VRTempMax = *vr
-				if len(detail.Hashboards) > 0 {
-					detail.Hashboards[0].VRTempC = *vr
-					detail.Hashboards[0].BoardTempC = *vr
-					detail.Hashboards[0].HasVRTemp = true
-				}
-			}
+		if info, ok := axetemp.FetchSystemInfo(snap.IP); ok {
+			applyAxeTemps(&snap, &detail, info)
 		}
 	}
 
@@ -494,6 +484,31 @@ func detailFromMinerData(data *asicrs.MinerData) models.Detail {
 	}
 	detail.Snapshot = snap
 	return detail
+}
+
+func applyAxeTemps(snap *models.Snapshot, detail *models.Detail, info axetemp.SystemInfo) {
+	if info.Chip != nil {
+		chip := *info.Chip
+		snap.HasASICTemp = true
+		snap.ASICTempMin = chip
+		snap.ASICTempMax = chip
+		if len(detail.Hashboards) > 0 {
+			detail.Hashboards[0].ASICTempIn = chip
+			detail.Hashboards[0].ASICTempOut = chip
+			detail.Hashboards[0].HasASICIn = true
+			detail.Hashboards[0].HasASICOut = true
+		}
+	}
+	if !snap.HasVRTemp && info.VR != nil {
+		snap.HasVRTemp = true
+		snap.VRTempMin = *info.VR
+		snap.VRTempMax = *info.VR
+		if len(detail.Hashboards) > 0 {
+			detail.Hashboards[0].VRTempC = *info.VR
+			detail.Hashboards[0].BoardTempC = *info.VR
+			detail.Hashboards[0].HasVRTemp = true
+		}
+	}
 }
 
 func appendUnique(ss []string, v string) []string {

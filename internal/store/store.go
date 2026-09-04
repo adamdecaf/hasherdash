@@ -372,6 +372,12 @@ func collectSamples(d models.Detail) []metricSample {
 		metricSample{d.ID, "efficiency", t, d.Efficiency},
 		metricSample{d.ID, "chips", t, float64(d.TotalChips)},
 	)
+	if d.HasBestDiff {
+		out = append(out, metricSample{d.ID, "best_diff", t, d.BestDiff})
+	}
+	if d.HasSessionDiff {
+		out = append(out, metricSample{d.ID, "session_diff", t, d.SessionDiff})
+	}
 	return out
 }
 
