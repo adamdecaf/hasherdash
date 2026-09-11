@@ -8,13 +8,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/adamdecaf/asic-rs-go/asicrs"
+	"github.com/256foundation/asic-rs/go/asic_go"
 	"github.com/adamdecaf/hasherdash/internal/axetemp"
 	"github.com/adamdecaf/hasherdash/internal/config"
 	"github.com/adamdecaf/hasherdash/internal/models"
 )
 
-// AsicSource discovers and polls real miners via asic-rs-go.
+// AsicSource discovers and polls real miners via asic-rs Go bindings.
 type AsicSource struct {
 	cfg         config.Config
 	staticIPs   []string            // configured fixed IPs (always polled)
@@ -199,7 +199,7 @@ func (a *AsicSource) shouldScanLocked() bool {
 func (a *AsicSource) scanLocked() error {
 	var scanErr error
 	for _, subnet := range a.subnets {
-		f, err := asicrs.NewFactoryFromSubnet(subnet)
+		f, err := asic_go.NewFactoryFromSubnet(subnet)
 		if err != nil {
 			scanErr = fmt.Errorf("subnet %s: %w", subnet, err)
 			log.Printf("asic-rs: %v", scanErr)
@@ -226,7 +226,7 @@ func (a *AsicSource) scanLocked() error {
 		f.Close()
 	}
 	for _, rng := range a.ranges {
-		f, err := asicrs.NewFactoryFromRange(rng)
+		f, err := asic_go.NewFactoryFromRange(rng)
 		if err != nil {
 			scanErr = fmt.Errorf("range %s: %w", rng, err)
 			log.Printf("asic-rs: %v", scanErr)
@@ -257,18 +257,18 @@ func (a *AsicSource) scanLocked() error {
 	return scanErr
 }
 
-func configureFactory(f *asicrs.Factory, cfg config.Config) {
-	f.SetPortCheck(true)
-	f.SetIdentificationTimeoutSecs(uint64(maxInt(cfg.ScanTimeoutSec, 3)))
-	f.SetConcurrentLimit(cfg.Concurrent)
-	f.SetAdaptiveConcurrency()
+func configureFactory(f *asic_go.Factory, cfg config.Config) {
+	f.WithPortCheck(true).
+		WithIdentificationTimeoutSecs(uint64(maxInt(cfg.ScanTimeoutSec, 3))).
+		WithConcurrentLimit(cfg.Concurrent).
+		WithAdaptiveConcurrency()
 }
 
 func pollOne(ip string, timeoutSec int) (models.Detail, error) {
-	factory := asicrs.NewFactory()
+	factory := asic_go.NewFactory()
 	defer factory.Close()
-	factory.SetIdentificationTimeoutSecs(uint64(maxInt(timeoutSec, 3)))
-	factory.SetPortCheck(true)
+	factory.WithIdentificationTimeoutSecs(uint64(maxInt(timeoutSec, 3))).
+		WithPortCheck(true)
 
 	miner, err := factory.GetMiner(ip)
 	if err != nil {
@@ -283,7 +283,7 @@ func pollOne(ip string, timeoutSec int) (models.Detail, error) {
 	return detailFromMinerData(data), nil
 }
 
-func detailFromMinerData(data *asicrs.MinerData) models.Detail {
+func detailFromMinerData(data *asic_go.MinerData) models.Detail {
 	now := time.Now().UTC()
 	snap := models.Snapshot{
 		IP:         data.IP,
