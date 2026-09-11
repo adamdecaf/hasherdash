@@ -1,22 +1,21 @@
 # syntax=docker/dockerfile:1
 
-# Multi-stage image: download asic-rs-go from the public module proxy,
-# build the Rust FFI, then link hasherdash with cgo.
-# No sibling checkout required.
+# Multi-stage image: clone asic-rs, build the Rust FFI, then link hasherdash with cgo.
+# Until 256foundation/asic-rs#364 lands, default to the adamdecaf fork branch.
+
+ARG ASIC_RS_REPO=https://github.com/adamdecaf/asic-rs.git
+ARG ASIC_RS_REF=feat/go-bindings
 
 # -----------------------------------------------------------------------------
-# Stage 1: fetch asic-rs-go module sources (Go proxy / sumdb)
+# Stage 1: clone asic-rs (full tree — asic-rs-ffi is a workspace crate)
 # -----------------------------------------------------------------------------
-FROM golang:1.27-bookworm AS mods
-WORKDIR /src
-COPY go.mod go.sum ./
-ENV GOTOOLCHAIN=auto
-RUN go mod download github.com/adamdecaf/asic-rs-go
-# Module cache is read-only; copy and chmod so cargo can write target/.
-RUN MODDIR="$(go list -m -f '{{.Dir}}' github.com/adamdecaf/asic-rs-go)" \
- && mkdir -p /src/asic-rs-go \
- && cp -a "$MODDIR"/. /src/asic-rs-go/ \
- && chmod -R u+w /src/asic-rs-go
+FROM debian:bookworm-slim AS asicrs-src
+ARG ASIC_RS_REPO
+ARG ASIC_RS_REF
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch "${ASIC_RS_REF}" "${ASIC_RS_REPO}" /src/asic-rs
 
 # -----------------------------------------------------------------------------
 # Stage 2: build asic-rs FFI (Rust) for linux
@@ -25,13 +24,13 @@ FROM rust:1-bookworm AS ffi
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake pkg-config \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=mods /src/asic-rs-go /src/asic-rs-go
-WORKDIR /src/asic-rs-go/asic-rs-ffi
-RUN cargo build --release \
+COPY --from=asicrs-src /src/asic-rs /src/asic-rs
+WORKDIR /src/asic-rs
+RUN cargo build -p asic-rs-ffi --release \
  && mkdir -p /out/lib /out/include \
  && cp target/release/libasic_rs_ffi.so /out/lib/ \
  && cp target/release/libasic_rs_ffi.a /out/lib/ \
- && cp include/asic_rs_ffi.h /out/include/
+ && cp go/asicrs/include/asic_rs_ffi.h /out/include/
 
 # -----------------------------------------------------------------------------
 # Stage 3: build hasherdash (Go + cgo)
@@ -41,21 +40,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /src
-COPY --from=mods /src/asic-rs-go /src/asic-rs-go
-COPY --from=ffi /out/lib/ /src/asic-rs-go/asicrs/lib/
-COPY --from=ffi /out/include/ /src/asic-rs-go/asicrs/include/
+COPY --from=asicrs-src /src/asic-rs /src/asic-rs
+COPY --from=ffi /out/lib/ /src/asic-rs/go/asicrs/lib/
+COPY --from=ffi /out/include/ /src/asic-rs/go/asicrs/include/
 
 WORKDIR /src/hasherdash
-COPY go.mod go.sum ./
-# Prefer the in-image tree (with built .so/.a) over the bare module cache.
-RUN printf '\nreplace github.com/adamdecaf/asic-rs-go => /src/asic-rs-go\n' >> go.mod
 COPY . .
+# Prefer the in-image asic-rs tree (with built .so/.a) over the module proxy.
+RUN go mod edit -replace=github.com/256foundation/asic-rs/go=/src/asic-rs/go
 
 ENV CGO_ENABLED=1
 ENV GOTOOLCHAIN=auto
-ENV CGO_CFLAGS="-I/src/asic-rs-go/asicrs/include"
-ENV CGO_LDFLAGS="-L/src/asic-rs-go/asicrs/lib -lasic_rs_ffi -lm -ldl -lpthread -Wl,-rpath,/usr/local/lib"
+ENV CGO_CFLAGS="-I/src/asic-rs/go/asicrs/include"
+ENV CGO_LDFLAGS="-L/src/asic-rs/go/asicrs/lib -lasic_rs_ffi -lm -ldl -lpthread -Wl,-rpath,/usr/local/lib"
 RUN go mod download \
  && go build -trimpath -ldflags="-s -w" -o /out/hasherdash ./cmd/hasherdash
 

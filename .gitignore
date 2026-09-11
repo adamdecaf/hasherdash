@@ -1,5 +1,6 @@
 bin/
 dist/
+.deps/
 data/
 *.test
 *.out

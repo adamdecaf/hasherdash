@@ -2,7 +2,7 @@ module github.com/adamdecaf/hasherdash
 
 go 1.26.5
 
-require github.com/adamdecaf/asic-rs-go v0.1.1-0.20260904220153-dbe22c3e7907
+require github.com/256foundation/asic-rs/go v0.0.0-20260911175617-e92e96810255
 
 require (
 	gopkg.in/yaml.v3 v3.0.1
@@ -20,3 +20,6 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
+
+// asic-rs#364 is not merged yet; pull the Go module from the fork PR branch.
+replace github.com/256foundation/asic-rs/go => github.com/adamdecaf/asic-rs/go v0.0.0-20260911175617-e92e96810255
