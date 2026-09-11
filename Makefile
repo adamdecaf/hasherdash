@@ -1,8 +1,8 @@
 .PHONY: run build test docker docker-push tidy ffi
 
-# Optional local path for asic-rs-go when developing against a sibling checkout.
-# Docker does not need this — it pulls github.com/adamdecaf/asic-rs-go via the module proxy.
-ASIC_RS_GO ?= ../asic-rs-go
+# Optional local path for asic-rs when developing against a sibling checkout.
+# Docker clones asic-rs (see ASIC_RS_REPO / ASIC_RS_REF).
+ASIC_RS ?= ../asic-rs
 
 # Local image name (compose / plain docker run).
 IMAGE ?= hasherdash
@@ -19,10 +19,10 @@ VERSION ?= $(shell \
 
 export CGO_ENABLED ?= 1
 
-# Build asic-rs FFI for local run/build (sibling checkout; override with ASIC_RS_GO=).
-# Docker does not use this target — the image builds FFI from the module proxy.
+# Build asic-rs FFI for local run/build (sibling checkout; override with ASIC_RS=).
+# Docker does not use this target — the image builds FFI from ASIC_RS_REPO.
 ffi:
-	$(MAKE) -C $(ASIC_RS_GO) ffi
+	$(MAKE) -C $(ASIC_RS)/go ffi
 
 run: ## run against real miners (requires built FFI + config)
 	go run ./cmd/hasherdash $(if $(CONFIG),-config $(CONFIG),)
@@ -36,8 +36,8 @@ test:
 tidy:
 	go mod tidy
 
-# Build image from this repo only (asic-rs-go comes from the public Go module proxy).
-# Tags local name + Hub :latest and :$(VERSION) (release publish uses both).
+# Build image from this repo. asic-rs is cloned inside the Dockerfile
+# (override ASIC_RS_REPO / ASIC_RS_REF for a fork PR).
 docker:
 	docker build -f Dockerfile \
 		-t $(IMAGE):latest \

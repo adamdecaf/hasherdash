@@ -8,13 +8,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/adamdecaf/asic-rs-go/asicrs"
+	"github.com/256foundation/asic-rs/go/asicrs"
 	"github.com/adamdecaf/hasherdash/internal/axetemp"
 	"github.com/adamdecaf/hasherdash/internal/config"
 	"github.com/adamdecaf/hasherdash/internal/models"
 )
 
-// AsicSource discovers and polls real miners via asic-rs-go.
+// AsicSource discovers and polls real miners via asic-rs Go bindings.
 type AsicSource struct {
 	cfg         config.Config
 	staticIPs   []string            // configured fixed IPs (always polled)
@@ -258,17 +258,17 @@ func (a *AsicSource) scanLocked() error {
 }
 
 func configureFactory(f *asicrs.Factory, cfg config.Config) {
-	f.SetPortCheck(true)
-	f.SetIdentificationTimeoutSecs(uint64(maxInt(cfg.ScanTimeoutSec, 3)))
-	f.SetConcurrentLimit(cfg.Concurrent)
-	f.SetAdaptiveConcurrency()
+	f.WithPortCheck(true).
+		WithIdentificationTimeoutSecs(uint64(maxInt(cfg.ScanTimeoutSec, 3))).
+		WithConcurrentLimit(cfg.Concurrent).
+		WithAdaptiveConcurrency()
 }
 
 func pollOne(ip string, timeoutSec int) (models.Detail, error) {
 	factory := asicrs.NewFactory()
 	defer factory.Close()
-	factory.SetIdentificationTimeoutSecs(uint64(maxInt(timeoutSec, 3)))
-	factory.SetPortCheck(true)
+	factory.WithIdentificationTimeoutSecs(uint64(maxInt(timeoutSec, 3))).
+		WithPortCheck(true)
 
 	miner, err := factory.GetMiner(ip)
 	if err != nil {

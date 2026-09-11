@@ -1,5 +1,5 @@
-github.com/adamdecaf/asic-rs-go v0.1.1-0.20260904220153-dbe22c3e7907 h1:C8b/YElEJNMGkHRk8zQFIuTfgbVlDMAkLQLrVpB9O98=
-github.com/adamdecaf/asic-rs-go v0.1.1-0.20260904220153-dbe22c3e7907/go.mod h1:4n6NOx2l8AWUw3HbySH9WMTmLKXzlM0SJDZZcdvZJTU=
+github.com/adamdecaf/asic-rs/go v0.0.0-20260911175617-e92e96810255 h1:tekE6QMO0Sondbji02gQvt9ZTMghhz4DXG08WQHOfKQ=
+github.com/adamdecaf/asic-rs/go v0.0.0-20260911175617-e92e96810255/go.mod h1:G+Nx9yZqojwZix8jAEzbmLNWxBC70+5QrMVowBggkvo=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/google/pprof v0.0.0-20260802141513-ef3492d7dac3 h1:LMLX+LgTNWpfvCBdFebv6EsYotImrt/Ppc5cXIriCSo=

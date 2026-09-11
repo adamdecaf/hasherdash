@@ -1,5 +1,5 @@
 // Package axetemp holds Bitaxe/Nerdaxe helpers used by the poller.
-// Kept separate so unit tests do not require cgo / asic-rs-go.
+// Kept separate so unit tests do not require cgo / asic-rs.
 package axetemp
 
 import (

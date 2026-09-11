@@ -1,6 +1,6 @@
 # hasherdash
 
-Read-only fleet dashboard for ASIC miners. Go + [oat.ink](https://oat.ink/) UI, powered by [asic-rs-go](https://github.com/adamdecaf/asic-rs-go).
+Read-only fleet dashboard for ASIC miners. Go + [oat.ink](https://oat.ink/) UI, powered by [asic-rs](https://github.com/256foundation/asic-rs) Go bindings.
 
 Compact table, filters, miner detail, and live charts for a wall monitor (20+ miners). Metric history is stored in **SQLite** so charts survive restarts.
 
@@ -16,7 +16,7 @@ Compact table, filters, miner detail, and live charts for a wall monitor (20+ mi
 
 ## Quick start (Docker)
 
-The image builds `asic-rs-go` from the public Go module proxy — no separate checkout.
+The image clones [asic-rs](https://github.com/256foundation/asic-rs) and compiles the FFI inside the build — no separate local checkout.
 
 Published images: **[adamdecaf/hasherdash](https://hub.docker.com/r/adamdecaf/hasherdash)** (pushed on git tags `v*`). Latest release: **[v1.2.0](https://github.com/adamdecaf/hasherdash/releases/tag/v1.2.0)**.
 
@@ -101,13 +101,13 @@ UI refresh interval is separate from backend poll (top-right control, `localStor
 
 ## Local run (no Docker)
 
-Needs a built [asic-rs-go](https://github.com/adamdecaf/asic-rs-go) FFI (sibling checkout is simplest):
+Needs a built [asic-rs](https://github.com/256foundation/asic-rs) FFI (sibling checkout is simplest):
 
 ```bash
 # optional: clone next to this repo if you don't already have it
-# git clone https://github.com/adamdecaf/asic-rs-go ../asic-rs-go
+# git clone https://github.com/256foundation/asic-rs ../asic-rs
 
-make ffi   # builds FFI in ../asic-rs-go (override with ASIC_RS_GO=…)
+make ffi   # builds FFI in ../asic-rs/go (override with ASIC_RS=…)
 
 export MINER_SUBNET=192.168.1.0/24
 # or: cp hasherdash.example.yaml hasherdash.yaml  # edit subnets
@@ -212,7 +212,7 @@ Dockerfile         multi-stage (module proxy + Rust FFI + cgo)
 - **Read-only** — no restart / pool / power control in the UI.
 - Canvas charts (no Chart.js); styling via [oat](https://github.com/knadh/oat).
 - Metric history uses pure-Go SQLite ([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)); no extra system library.
-- Docker builds pull `github.com/adamdecaf/asic-rs-go` and compile the FFI inside the image.
+- Docker builds clone asic-rs and compile `asic-rs-ffi` inside the image.
 - CI builds the binary and Docker image on every push/PR.
 - Release tags `v*` publish two Hub tags: `adamdecaf/hasherdash:<version>` (e.g. `1.2.0` from `v1.2.0`) and `adamdecaf/hasherdash:latest`. Compose uses the Hub image; run `docker compose pull` to upgrade.
 - Local publish: `make docker-push` (after `docker login`; override with `DOCKER_IMAGE=` / `VERSION=`).
