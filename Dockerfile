@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
 
 # Multi-stage image: clone asic-rs, build the Rust FFI, then link hasherdash with cgo.
-# Until 256foundation/asic-rs#364 lands, default to the adamdecaf fork branch.
+# Pin to the asic-rs#364 merge on master until a go/v* module tag exists.
 
-ARG ASIC_RS_REPO=https://github.com/adamdecaf/asic-rs.git
-ARG ASIC_RS_REF=feat/go-bindings
+ARG ASIC_RS_REPO=https://github.com/256foundation/asic-rs.git
+ARG ASIC_RS_REF=master
 # Pin so Docker layer cache invalidates when the Go bindings commit moves.
-ARG ASIC_RS_SHA=5d63fcddbea64b73edc5bfbb86492e45a3b736c2
+ARG ASIC_RS_SHA=6063638eb001dff85dc074dcc7473e68159721ab
 
 # -----------------------------------------------------------------------------
 # Stage 1: clone asic-rs (full tree — asic-rs-ffi is a workspace crate)

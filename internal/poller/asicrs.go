@@ -199,7 +199,7 @@ func (a *AsicSource) shouldScanLocked() bool {
 func (a *AsicSource) scanLocked() error {
 	var scanErr error
 	for _, subnet := range a.subnets {
-		f, err := asic_go.NewFactoryFromSubnet(subnet)
+		f, err := asic_go.NewMinerFactoryFromSubnet(subnet)
 		if err != nil {
 			scanErr = fmt.Errorf("subnet %s: %w", subnet, err)
 			log.Printf("asic-rs: %v", scanErr)
@@ -215,7 +215,7 @@ func (a *AsicSource) scanLocked() error {
 			continue
 		}
 		for _, m := range miners {
-			if ip, err := m.IP(); err == nil {
+			if ip, err := m.GetIP(); err == nil {
 				ip = strings.TrimSpace(ip)
 				if ip != "" {
 					a.discovered[ip] = struct{}{}
@@ -226,7 +226,7 @@ func (a *AsicSource) scanLocked() error {
 		f.Close()
 	}
 	for _, rng := range a.ranges {
-		f, err := asic_go.NewFactoryFromRange(rng)
+		f, err := asic_go.NewMinerFactoryFromRange(rng)
 		if err != nil {
 			scanErr = fmt.Errorf("range %s: %w", rng, err)
 			log.Printf("asic-rs: %v", scanErr)
@@ -242,7 +242,7 @@ func (a *AsicSource) scanLocked() error {
 			continue
 		}
 		for _, m := range miners {
-			if ip, err := m.IP(); err == nil {
+			if ip, err := m.GetIP(); err == nil {
 				ip = strings.TrimSpace(ip)
 				if ip != "" {
 					a.discovered[ip] = struct{}{}
@@ -257,7 +257,7 @@ func (a *AsicSource) scanLocked() error {
 	return scanErr
 }
 
-func configureFactory(f *asic_go.Factory, cfg config.Config) {
+func configureFactory(f *asic_go.MinerFactory, cfg config.Config) {
 	f.WithPortCheck(true).
 		WithIdentificationTimeoutSecs(uint64(maxInt(cfg.ScanTimeoutSec, 3))).
 		WithConcurrentLimit(cfg.Concurrent).
@@ -265,7 +265,7 @@ func configureFactory(f *asic_go.Factory, cfg config.Config) {
 }
 
 func pollOne(ip string, timeoutSec int) (models.Detail, error) {
-	factory := asic_go.NewFactory()
+	factory := asic_go.NewMinerFactory()
 	defer factory.Close()
 	factory.WithIdentificationTimeoutSecs(uint64(maxInt(timeoutSec, 3))).
 		WithPortCheck(true)
@@ -290,9 +290,9 @@ func detailFromMinerData(data *asic_go.MinerData) models.Detail {
 		Make:       data.DeviceInfo.Make,
 		Model:      data.DeviceInfo.Model,
 		Firmware:   data.DeviceInfo.Firmware,
-		Algo:       data.DeviceInfo.Algo,
+		Algo:       string(data.DeviceInfo.Algo),
 		IsMining:   data.IsMining,
-		HashrateTH: data.HashrateTH(),
+		HashrateTH: hashrateTH(data.Hashrate),
 		UpdatedAt:  now,
 		LastSeen:   now,
 	}
@@ -310,7 +310,7 @@ func detailFromMinerData(data *asic_go.MinerData) models.Detail {
 	}
 	models.ApplyStableID(&snap)
 	if data.ExpectedHashrate != nil {
-		snap.ExpectedTH = data.ExpectedHashrate.TH()
+		snap.ExpectedTH = hashrateTH(data.ExpectedHashrate)
 	}
 	if data.Wattage != nil {
 		snap.Wattage = *data.Wattage
@@ -333,7 +333,7 @@ func detailFromMinerData(data *asic_go.MinerData) models.Detail {
 	if data.ExpectedHashboards != nil {
 		snap.Boards = int(*data.ExpectedHashboards)
 	} else if n, ok := data.DeviceInfo.Hardware.BoardCount(); ok {
-		snap.Boards = n
+		snap.Boards = int(n)
 	}
 	if data.ExpectedFans != nil {
 		snap.Fans = int(*data.ExpectedFans)
@@ -352,9 +352,7 @@ func detailFromMinerData(data *asic_go.MinerData) models.Detail {
 	var asicTemps, vrTemps []float64
 	for _, b := range data.Hashboards {
 		row := models.BoardRow{Position: int(b.Position)}
-		if b.Hashrate != nil {
-			row.HashrateTH = b.Hashrate.TH()
-		}
+		row.HashrateTH = hashrateTH(b.Hashrate)
 
 		// Board/PCB temperature. On Bitaxe/Nerdaxe this is the VR sensor (vrTemp).
 		var boardVR *float64
@@ -528,4 +526,16 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// hashrateTH converts to TH/s. Invalid units are treated as unknown (0).
+func hashrateTH(hr *asic_go.HashRate) float64 {
+	if hr == nil {
+		return 0
+	}
+	v, err := hr.TH()
+	if err != nil {
+		return 0
+	}
+	return v
 }

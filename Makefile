@@ -37,7 +37,7 @@ tidy:
 	go mod tidy
 
 # Build image from this repo. asic-rs is cloned inside the Dockerfile
-# (override ASIC_RS_REPO / ASIC_RS_REF for a fork PR).
+# (override ASIC_RS_REPO / ASIC_RS_REF / ASIC_RS_SHA to pin a revision).
 docker:
 	docker build -f Dockerfile \
 		-t $(IMAGE):latest \

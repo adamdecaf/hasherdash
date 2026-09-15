@@ -13,9 +13,9 @@ concurrency:
 
 env:
   DOCKER_IMAGE: adamdecaf/hasherdash
-  ASIC_RS_REPO: https://github.com/adamdecaf/asic-rs.git
-  ASIC_RS_REF: feat/go-bindings
-  ASIC_RS_SHA: 5d63fcddbea64b73edc5bfbb86492e45a3b736c2
+  ASIC_RS_REPO: https://github.com/256foundation/asic-rs.git
+  ASIC_RS_REF: master
+  ASIC_RS_SHA: 6063638eb001dff85dc074dcc7473e68159721ab
 
 jobs:
   build:
@@ -48,8 +48,8 @@ jobs:
       - name: Checkout asic-rs (Go bindings + FFI)
         uses: actions/checkout@v7
         with:
-          repository: adamdecaf/asic-rs
-          ref: feat/go-bindings
+          repository: 256foundation/asic-rs
+          ref: ${{ env.ASIC_RS_SHA }}
           path: .deps/asic-rs
 
       - name: Cache Cargo

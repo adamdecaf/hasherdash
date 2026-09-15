@@ -213,6 +213,7 @@ Dockerfile         multi-stage (module proxy + Rust FFI + cgo)
 - Canvas charts (no Chart.js); styling via [oat](https://github.com/knadh/oat).
 - Metric history uses pure-Go SQLite ([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)); no extra system library.
 - Docker builds clone asic-rs and compile `asic-rs-ffi` inside the image.
+- asic-rs Go bindings are pinned to the [#364](https://github.com/256foundation/asic-rs/pull/364) merge on master until a `go/v*` tag exists.
 - CI builds the binary and Docker image on every push/PR.
 - Release tags `v*` publish two Hub tags: `adamdecaf/hasherdash:<version>` (e.g. `1.2.0` from `v1.2.0`) and `adamdecaf/hasherdash:latest`. Compose uses the Hub image; run `docker compose pull` to upgrade.
 - Local publish: `make docker-push` (after `docker login`; override with `DOCKER_IMAGE=` / `VERSION=`).
