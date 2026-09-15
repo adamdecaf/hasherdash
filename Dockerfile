@@ -18,13 +18,21 @@ ARG ASIC_RS_SHA
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates git \
     && rm -rf /var/lib/apt/lists/*
-RUN git clone --depth 1 --branch "${ASIC_RS_REF}" "${ASIC_RS_REPO}" /src/asic-rs \
+# Fetch the pinned SHA (not branch HEAD) so the image stays reproducible
+# after asic-rs master moves.
+RUN git init /src/asic-rs \
+ && git -C /src/asic-rs remote add origin "${ASIC_RS_REPO}" \
+ && git -C /src/asic-rs fetch --depth 1 origin "${ASIC_RS_SHA}" \
+ && git -C /src/asic-rs checkout --detach FETCH_HEAD \
  && git -C /src/asic-rs rev-parse HEAD | grep -q "^${ASIC_RS_SHA}"
 
 # -----------------------------------------------------------------------------
 # Stage 2: build asic-rs FFI (Rust) for linux
 # -----------------------------------------------------------------------------
 FROM rust:1-bookworm AS ffi
+# `make -C go ffi` runs `go run ./internal/buildffi` to copy Cargo artifacts.
+COPY --from=golang:1.27-bookworm /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:${PATH}"
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake pkg-config \
     && rm -rf /var/lib/apt/lists/*
