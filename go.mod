@@ -3,7 +3,7 @@ module github.com/adamdecaf/hasherdash
 go 1.26.5
 
 // Pin to asic-rs#364 on master until a go/v* module tag is published.
-require github.com/256foundation/asic-rs/go v0.0.0-20260915170135-6063638eb001
+require github.com/256foundation/asic-rs/go v0.8.4
 
 require (
 	gopkg.in/yaml.v3 v3.0.1
