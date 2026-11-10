@@ -2,11 +2,11 @@ module github.com/adamdecaf/hasherdash
 
 go 1.26.5
 
-require github.com/256foundation/asic-rs/go v0.8.6
+require github.com/256foundation/asic-rs/go v0.8.7
 
 require (
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.61.0
+	modernc.org/sqlite v1.61.1
 )
 
 require (
