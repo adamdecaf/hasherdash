@@ -41,7 +41,7 @@
         <div class="hero-actions">
           <a class="btn btn-primary" href="#quickstart">Get started</a>
           <a class="btn" href="https://github.com/adamdecaf/hasherdash">View on GitHub</a>
-          <a class="btn" href="https://github.com/adamdecaf/hasherdash/releases/tag/v1.2.0">v1.2.0</a>
+          <a class="btn" href="https://github.com/adamdecaf/hasherdash/releases/tag/v1.3.0">v1.3.0</a>
         </div>
         <ul class="hero-meta">
           <li>Subnet discovery</li>
@@ -144,7 +144,7 @@
         <p class="section-lede">
           Docker is the fastest path. Published images:
           <a href="https://hub.docker.com/r/adamdecaf/hasherdash">adamdecaf/hasherdash</a>
-          (tag <code>1.2.0</code> or <code>latest</code>). Host networking lets the container scan your LAN.
+          (tag <code>1.3.0</code> or <code>latest</code>). Host networking lets the container scan your LAN.
         </p>
 
         <div class="steps">
@@ -163,12 +163,12 @@ docker compose up -d
             <div>
               <h3>Or pull and run</h3>
               <pre><code>mkdir -p data
-docker pull adamdecaf/hasherdash:1.2.0
+docker pull adamdecaf/hasherdash:1.3.0
 docker run --rm --network host \
   -e MINER_SUBNET=192.168.1.0/24 \
   -e SQLITE_PATH=/app/data/hasherdash.db \
   -v "$PWD/data:/app/data" \
-  adamdecaf/hasherdash:1.2.0</code></pre>
+  adamdecaf/hasherdash:1.3.0</code></pre>
             </div>
           </div>
           <div class="step">
@@ -193,7 +193,7 @@ docker run --rm --network host \
   -v "$PWD/data:/app/data" \
   -e CONFIG_FILE=/app/hasherdash.yaml \
   -e SQLITE_PATH=/app/data/hasherdash.db \
-  adamdecaf/hasherdash:1.2.0</code></pre>
+  adamdecaf/hasherdash:1.3.0</code></pre>
         </details>
 
         <details class="more">

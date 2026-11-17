@@ -4,9 +4,9 @@
 # Pin FFI to the same asic-rs release as go.mod (github.com/256foundation/asic-rs/go).
 
 ARG ASIC_RS_REPO=https://github.com/256foundation/asic-rs.git
-ARG ASIC_RS_REF=v0.8.5
+ARG ASIC_RS_REF=v0.8.10
 # Pin so Docker layer cache invalidates when the Go bindings commit moves.
-ARG ASIC_RS_SHA=6a57b4cc7c1a4bbef82604cfbbb4bf94083895c4
+ARG ASIC_RS_SHA=b53efe3fb84350456855b20dc7865133d5009071
 
 # -----------------------------------------------------------------------------
 # Stage 1: clone asic-rs (full tree — asic-rs-ffi is a workspace crate)

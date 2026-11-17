@@ -18,19 +18,19 @@ Compact table, filters, miner detail, and live charts for a wall monitor (20+ mi
 
 The image clones [asic-rs](https://github.com/256foundation/asic-rs) and compiles the FFI inside the build — no separate local checkout.
 
-Published images: **[adamdecaf/hasherdash](https://hub.docker.com/r/adamdecaf/hasherdash)** (pushed on git tags `v*`). Latest release: **[v1.2.0](https://github.com/adamdecaf/hasherdash/releases/tag/v1.2.0)**.
+Published images: **[adamdecaf/hasherdash](https://hub.docker.com/r/adamdecaf/hasherdash)** (pushed on git tags `v*`). Latest release: **[v1.3.0](https://github.com/adamdecaf/hasherdash/releases/tag/v1.3.0)**.
 
 **Pull a release (no local build):**
 
 ```bash
 mkdir -p data
-docker pull adamdecaf/hasherdash:1.2.0
+docker pull adamdecaf/hasherdash:1.3.0
 # or: docker pull adamdecaf/hasherdash:latest
 docker run --rm --network host \
   -e MINER_SUBNET=192.168.1.0/24 \
   -e SQLITE_PATH=/app/data/hasherdash.db \
   -v "$PWD/data:/app/data" \
-  adamdecaf/hasherdash:1.2.0
+  adamdecaf/hasherdash:1.3.0
 ```
 
 **Docker Compose (recommended — uses Hub image, no auto-pull on every up):**
@@ -213,9 +213,9 @@ Dockerfile         multi-stage (module proxy + Rust FFI + cgo)
 - Canvas charts (no Chart.js); styling via [oat](https://github.com/knadh/oat).
 - Metric history uses pure-Go SQLite ([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)); no extra system library.
 - Docker builds clone asic-rs and compile `asic-rs-ffi` inside the image.
-- asic-rs Go bindings and the Docker FFI clone are pinned to [asic-rs v0.8.5](https://github.com/256foundation/asic-rs/releases/tag/v0.8.5).
+- asic-rs Go bindings and the Docker FFI clone are pinned to [asic-rs v0.8.10](https://github.com/256foundation/asic-rs/releases/tag/v0.8.10).
 - CI builds the binary and Docker image on every push/PR.
-- Release tags `v*` publish two Hub tags: `adamdecaf/hasherdash:<version>` (e.g. `1.2.0` from `v1.2.0`) and `adamdecaf/hasherdash:latest`. Compose uses the Hub image; run `docker compose pull` to upgrade.
+- Release tags `v*` publish two Hub tags: `adamdecaf/hasherdash:<version>` (e.g. `1.3.0` from `v1.3.0`) and `adamdecaf/hasherdash:latest`. Compose uses the Hub image; run `docker compose pull` to upgrade.
 - Local publish: `make docker-push` (after `docker login`; override with `DOCKER_IMAGE=` / `VERSION=`).
 - GitHub Actions secrets for Hub publish: `DOCKER_USERNAME`, `DOCKER_PASSWORD` (Hub password or access token with write access).
 

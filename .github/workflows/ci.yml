@@ -14,8 +14,8 @@ concurrency:
 env:
   DOCKER_IMAGE: adamdecaf/hasherdash
   ASIC_RS_REPO: https://github.com/256foundation/asic-rs.git
-  ASIC_RS_REF: v0.8.5
-  ASIC_RS_SHA: 6a57b4cc7c1a4bbef82604cfbbb4bf94083895c4
+  ASIC_RS_REF: v0.8.10
+  ASIC_RS_SHA: b53efe3fb84350456855b20dc7865133d5009071
 
 jobs:
   build:

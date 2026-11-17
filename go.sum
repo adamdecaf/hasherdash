@@ -1,5 +1,5 @@
-github.com/256foundation/asic-rs/go v0.8.9 h1:myqD6PNDIEJx/TWhRkEZZsUar8QkNq1IHnpLpBhTYEA=
-github.com/256foundation/asic-rs/go v0.8.9/go.mod h1:G+Nx9yZqojwZix8jAEzbmLNWxBC70+5QrMVowBggkvo=
+github.com/256foundation/asic-rs/go v0.8.10 h1:ObEioh3LWfBu4GqKXVEkbKY7PTvl2tkAC0D9J3JBhws=
+github.com/256foundation/asic-rs/go v0.8.10/go.mod h1:G+Nx9yZqojwZix8jAEzbmLNWxBC70+5QrMVowBggkvo=
 github.com/dustin/go-humanize v1.1.0 h1:dbKTrvD0klcbBV/h4AWJdMuZogJACoMlvWIWZ5b2xWg=
 github.com/dustin/go-humanize v1.1.0/go.mod h1:hc1CvRkJMsgxqjmjMQF3QNRAZBwY8AXBAzKYoSX9sFI=
 github.com/google/pprof v0.0.0-20261016150608-1facf8f91b50 h1:PlNWJRxu5APSV0pWqfIsZ0qt9OOGHSWfZQ4zvx+WgWs=
